@@ -7,8 +7,8 @@ export type SlashCommand = {
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'help', hint: 'show commands' },
-  { name: 'model', hint: 'select model (↑/↓, Enter applies)' },
-  { name: 'effort', hint: 'thinking effort (Low…X-High)' },
+  { name: 'model', hint: 'select model (up/dn, Enter applies)' },
+  { name: 'effort', hint: 'thinking effort (Low...X-High)' },
   { name: 'resume', hint: 'continue a past chat' },
   { name: 'parallel', hint: 'run tasks concurrently · /parallel t1 || t2', takesArg: true, usage: '<task1> || <task2> [|| ...]' },
   { name: 'plan', hint: 'toggle plan-only mode (no edits)' },

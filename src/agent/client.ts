@@ -1,7 +1,7 @@
 import { query, type Options, type CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import { loadToken } from '../config/tokenStore.js';
 import { resolveModel } from './models.js';
-import { SYSTEM_PROMPT } from './systemPrompt.js';
+import { buildSystemPrompt } from './systemPrompt.js';
 import { budgetFor, type Effort } from './effort.js';
 import { FileLockManager, lockKeyFor, type Release } from './fileLocks.js';
 import { estimateTokens, contextState, COMPACT_THRESHOLD } from './contextBudget.js';
@@ -181,14 +181,16 @@ export class AgentClient {
     }
 
     const canUseTool = this.buildCanUseTool();
+    const cwd = process.cwd();
+    const systemPrompt = await buildSystemPrompt(cwd);
 
     const baseMode: Options['permissionMode'] = canUseTool ? 'default' : 'acceptEdits';
     const options: Options = {
       model: this.model,
-      cwd: process.cwd(),
+      cwd,
       permissionMode: this.planMode ? 'plan' : baseMode,
       allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt,
       maxThinkingTokens: budgetFor(this.effort),
       includePartialMessages: true,
     };

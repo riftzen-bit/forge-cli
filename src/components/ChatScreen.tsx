@@ -26,6 +26,8 @@ import type { SessionSummary } from '../session/store.js';
 import type { AuthStatus } from '../auth/status.js';
 import { pickThinkingLabel } from './thinkingLabels.js';
 import type { Settings } from '../config/settings.js';
+import { getTheme } from '../ui/theme.js';
+import { figures } from '../ui/figures.js';
 
 type PickerMode = 'none' | 'model' | 'effort' | 'resume';
 
@@ -106,7 +108,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     client.setModel(id);
     setActiveModel(id);
     setPicker('none');
-    setMessages((m) => [...m, { role: 'system', text: `model → ${labelFor(id)}` }]);
+    setMessages((m) => [...m, { role: 'system', text: `model -> ${labelFor(id)}` }]);
     try {
       await saveSettings({ defaultModel: id });
     } catch {
@@ -118,7 +120,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     client.setEffort(e);
     setActiveEffort(e);
     setPicker('none');
-    setMessages((m) => [...m, { role: 'system', text: `effort → ${e}` }]);
+    setMessages((m) => [...m, { role: 'system', text: `effort -> ${e}` }]);
     try {
       await saveSettings({ effort: e });
     } catch {
@@ -127,7 +129,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   };
 
   const runCompact = async () => {
-    setMessages((m) => [...m, { role: 'system', text: 'compacting…' }]);
+    setMessages((m) => [...m, { role: 'system', text: 'compacting...' }]);
     setBusy(true);
     setBusyLabel('compacting');
     try {
@@ -136,7 +138,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         onCompactRun: (before, after) => {
           setMessages((m) => [
             ...m,
-            { role: 'system', text: `compacted · ${before.toLocaleString()} → ${after.toLocaleString()} tok` },
+            { role: 'system', text: `compacted · ${before.toLocaleString()} -> ${after.toLocaleString()} tok` },
           ]);
         },
       });
@@ -197,7 +199,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         const id = Number(tail);
         if (!Number.isFinite(id)) return `usage: /todo ${sub} <id>`;
         const ok = todoStore.setStatus(id, sub as 'done' | 'doing' | 'pending');
-        return ok ? `#${id} → ${sub}` : `no todo #${id}`;
+        return ok ? `#${id} -> ${sub}` : `no todo #${id}`;
       }
       case 'rm': {
         const id = Number(tail);
@@ -309,7 +311,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         onCompactRun: (before, after) => {
           setMessages((m) => [
             ...m,
-            { role: 'system', text: `auto-compacted · ${before.toLocaleString()} → ${after.toLocaleString()} tok` },
+            { role: 'system', text: `auto-compacted · ${before.toLocaleString()} -> ${after.toLocaleString()} tok` },
           ]);
         },
       });
@@ -375,11 +377,15 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     ...messages.map((m) => ({ kind: 'msg' as const, m })),
   ];
 
+  const t = getTheme();
+  const promptBorderColor = busy ? t.subtle : planMode ? t.planMode : t.promptBorder;
+  const pointerColor = busy ? t.subtle : planMode ? t.planMode : t.claude;
+
   return (
     <>
       <Static items={staticItems}>
         {(item, i) => {
-          if (item.kind === 'banner') return <Banner key={i} />;
+          if (item.kind === 'banner') return <Banner key={i} cwd={cwd} />;
           if (item.kind === 'tips') return <Tips key={i} />;
           return <MessageRow key={i} message={item.m} verbose={verbose} />;
         }}
@@ -392,24 +398,25 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         <StatusBar model={activeModel} effort={activeEffort} auth={auth} cwd={cwd} planMode={planMode} tokens={tokens} tokenLimit={CONTEXT_LIMIT} template={settings?.statusLine} />
         <Box
           borderStyle="round"
-          borderColor={busy ? 'gray' : planMode ? 'yellow' : 'cyan'}
+          borderColor={promptBorderColor}
           paddingX={1}
         >
-          <Text color={busy ? 'gray' : 'cyan'} bold>❯ </Text>
+          <Text color={pointerColor} bold>{figures.pointer} </Text>
           {busy ? (
-            <Text dimColor>working…</Text>
+            <Text color={t.subtle}>working...</Text>
           ) : (
             <TextInput
               value={input}
               onChange={setInput}
               onSubmit={submit}
-              placeholder="ask forge to build, edit, or explain something…"
+              placeholder="ask forge to build, edit, or explain something..."
             />
           )}
         </Box>
         {paletteOpen && <CommandPalette commands={palette} cursor={cursor} />}
         <Box paddingX={2}>
-          <Text dimColor>enter send · / commands · Ctrl+O details{verbose ? ' on' : ''} · esc cancel · ctrl-c exit</Text>
+          <Text color={t.subtle}>enter send</Text>
+          <Text color={t.subtle}> · / commands · ctrl+o details{verbose ? ' on' : ''} · esc cancel · ctrl+c exit</Text>
         </Box>
       </Box>
     </>
@@ -442,17 +449,17 @@ function summarizeInput(tool: string, input: Record<string, unknown>, cwd: strin
   }
   if (tool === 'Bash' && typeof input['command'] === 'string') {
     const c = (input['command'] as string).replace(/\s+/g, ' ').trim();
-    return c.length > 70 ? c.slice(0, 69) + '…' : c;
+    return c.length > 70 ? c.slice(0, 69) + '...' : c;
   }
   for (const k of ['pattern', 'query', 'url']) {
     const v = input[k];
     if (typeof v === 'string' && v.trim()) {
-      return v.length > 70 ? v.slice(0, 69) + '…' : v;
+      return v.length > 70 ? v.slice(0, 69) + '...' : v;
     }
   }
   const entries = Object.entries(input).slice(0, 1);
   if (!entries.length) return '';
   const [k, v] = entries[0]!;
   const s = typeof v === 'string' ? v : JSON.stringify(v);
-  return `${k}=${s.length > 50 ? s.slice(0, 49) + '…' : s}`;
+  return `${k}=${s.length > 50 ? s.slice(0, 49) + '...' : s}`;
 }

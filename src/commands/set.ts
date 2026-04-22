@@ -17,7 +17,7 @@ export function registerSetCommand(program: Command): void {
     .action(async (labelOrId: string) => {
       const resolved = resolveModel(labelOrId);
       await saveSettings({ defaultModel: resolved });
-      console.log(`default model → ${resolved}`);
+      console.log(`default model -> ${resolved}`);
       console.log('known models:');
       for (const line of listModels()) console.log(`  ${line}`);
     });
@@ -46,7 +46,7 @@ export function registerSetCommand(program: Command): void {
         return;
       }
       await saveSettings({ theme: mode });
-      console.log(`theme → ${mode}`);
+      console.log(`theme -> ${mode}`);
     });
 
   set
@@ -55,6 +55,6 @@ export function registerSetCommand(program: Command): void {
     .action(async (onOff: string) => {
       const v = onOff === 'on' || onOff === 'true';
       await saveSettings({ telemetry: v });
-      console.log(`telemetry → ${v ? 'on' : 'off'}`);
+      console.log(`telemetry -> ${v ? 'on' : 'off'}`);
     });
 }

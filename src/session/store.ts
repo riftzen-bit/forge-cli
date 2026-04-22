@@ -99,5 +99,5 @@ export function formatTimestamp(ms: number): string {
 
 export function truncate(s: string, n: number): string {
   const one = s.replace(/\s+/g, ' ').trim();
-  return one.length > n ? one.slice(0, n - 1) + '…' : one;
+  return one.length > n ? one.slice(0, n - 1) + '...' : one;
 }

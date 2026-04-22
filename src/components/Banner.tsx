@@ -1,33 +1,39 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { Clawd } from './Clawd.js';
+import { getTheme } from '../ui/theme.js';
 
-export function Banner() {
+type Props = { cwd?: string };
+
+export function Banner({ cwd }: Props) {
+  const t = getTheme();
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box
-        flexDirection="column"
+        flexDirection="row"
         borderStyle="round"
-        borderColor="cyan"
-        paddingX={3}
-        paddingY={1}
+        borderColor={t.claude}
+        paddingX={2}
+        paddingY={0}
       >
-        <Box>
-          <Text color="magenta" bold>✦ </Text>
-          <Text color="cyan" bold>F O R G E</Text>
-          <Text dimColor>   forge code in your terminal · think · build</Text>
+        <Box marginRight={2}>
+          <Clawd />
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>commands  </Text>
-          <Text color="cyan">/help</Text>
-          <Text dimColor>  </Text>
-          <Text color="cyan">/exit</Text>
-        </Box>
-        <Box>
-          <Text dimColor>tip       type a request, or </Text>
-          <Text color="cyan">/</Text>
-          <Text dimColor> to open the command palette</Text>
+        <Box flexDirection="column" justifyContent="center">
+          <Text color={t.claude} bold>Welcome to Forge</Text>
+          <Text color={t.subtle}>an agentic coding assistant</Text>
+          {cwd && (
+            <Box marginTop={1}>
+              <Text color={t.subtle}>cwd </Text>
+              <Text>{shortenCwd(cwd)}</Text>
+            </Box>
+          )}
         </Box>
       </Box>
     </Box>
   );
+}
+
+function shortenCwd(cwd: string): string {
+  return cwd.length > 60 ? '...' + cwd.slice(-59) : cwd;
 }

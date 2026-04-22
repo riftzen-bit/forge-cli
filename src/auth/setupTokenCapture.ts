@@ -67,5 +67,5 @@ export async function runSetupTokenCapture(): Promise<CaptureResult> {
 
   const token = match[0];
   const path = await saveToken(token);
-  return { ok: true, path, tokenPreview: `${token.slice(0, 10)}…${token.slice(-4)}` };
+  return { ok: true, path, tokenPreview: `${token.slice(0, 10)}...${token.slice(-4)}` };
 }

@@ -39,7 +39,7 @@ export function ResumeSelector({ onSelect, onCancel }: Props) {
         paddingY={1}
       >
         <Box>
-          <Text color="cyan" bold>✻ </Text>
+          <Text color="cyan" bold>* </Text>
           <Text bold>Resume Session</Text>
         </Box>
         <Box marginTop={1}>
@@ -48,7 +48,7 @@ export function ResumeSelector({ onSelect, onCancel }: Props) {
 
         {sessions === null ? (
           <Box marginTop={1}>
-            <Text dimColor>loading sessions…</Text>
+            <Text dimColor>loading sessions...</Text>
           </Box>
         ) : sessions.length === 0 ? (
           <Box marginTop={1}>
@@ -62,7 +62,7 @@ export function ResumeSelector({ onSelect, onCancel }: Props) {
                 <Box key={s.id} flexDirection="column">
                   <Box>
                     <Text color={focused ? 'cyan' : 'white'} bold={focused}>
-                      {focused ? '❯ ' : '  '}
+                      {focused ? '> ' : '  '}
                       {formatTimestamp(s.mtime).padEnd(10)}
                     </Text>
                     <Text dimColor>{s.id.slice(0, 8)}  </Text>
@@ -75,7 +75,7 @@ export function ResumeSelector({ onSelect, onCancel }: Props) {
         )}
 
         <Box marginTop={1}>
-          <Text dimColor>↑/↓ navigate · Enter resume · Esc cancel</Text>
+          <Text dimColor>up/dn navigate · Enter resume · Esc cancel</Text>
         </Box>
       </Box>
     </Box>

@@ -4,6 +4,7 @@ import { labelFor } from '../agent/models.js';
 import type { Effort } from '../agent/effort.js';
 import type { AuthStatus } from '../auth/status.js';
 import { authBadge } from '../auth/status.js';
+import { getTheme } from '../ui/theme.js';
 
 type Props = {
   model: string;
@@ -21,11 +22,11 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 }
 
 export function StatusBar({ model, effort, auth, cwd, planMode, tokens, tokenLimit, template }: Props) {
+  const t = getTheme();
   const badge = authBadge(auth);
-  const shortCwd = cwd.length > 40 ? '…' + cwd.slice(-39) : cwd;
+  const shortCwd = cwd.length > 40 ? '...' + cwd.slice(-39) : cwd;
   const pct = typeof tokens === 'number' && tokenLimit ? Math.round((tokens / tokenLimit) * 100) : undefined;
-  const tokColor: 'gray' | 'yellow' | 'red' =
-    pct === undefined ? 'gray' : pct >= 90 ? 'red' : pct >= 80 ? 'yellow' : 'gray';
+  const ctxColor = pct === undefined ? t.subtle : pct >= 90 ? t.error : pct >= 80 ? t.warning : t.subtle;
 
   if (template) {
     const rendered = renderTemplate(template, {
@@ -39,31 +40,32 @@ export function StatusBar({ model, effort, auth, cwd, planMode, tokens, tokenLim
     });
     return (
       <Box paddingX={2}>
-        <Text dimColor>{rendered}</Text>
+        <Text color={t.subtle}>{rendered}</Text>
       </Box>
     );
   }
 
+  const sep = <Text color={t.subtle}> · </Text>;
+
   return (
     <Box paddingX={2}>
-      <Text color="cyan">◆ </Text>
-      <Text color="cyan" bold>{labelFor(model)}</Text>
-      <Text dimColor>  ·  </Text>
-      <Text color="magenta">{effort}</Text>
-      <Text dimColor>  ·  </Text>
-      <Text color={badge.color}>●</Text>
-      <Text dimColor> {badge.label}  ·  </Text>
-      <Text dimColor>{shortCwd}</Text>
+      <Text color={t.claude} bold>{labelFor(model)}</Text>
+      {sep}
+      <Text color={t.permission}>{effort}</Text>
+      {sep}
+      <Text color={badge.color}>{badge.label}</Text>
+      {sep}
+      <Text color={t.subtle}>{shortCwd}</Text>
       {planMode && (
         <>
-          <Text dimColor>  ·  </Text>
-          <Text color="yellow" bold>plan</Text>
+          {sep}
+          <Text color={t.planMode} bold>plan</Text>
         </>
       )}
       {pct !== undefined && (
         <>
-          <Text dimColor>  ·  </Text>
-          <Text color={tokColor}>ctx {pct}%</Text>
+          {sep}
+          <Text color={ctxColor}>ctx {pct}%</Text>
         </>
       )}
     </Box>

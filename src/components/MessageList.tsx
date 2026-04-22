@@ -55,17 +55,17 @@ export function MessageList({ messages, verbose = false }: Props) {
           return (
             <Box key={i} flexDirection="column" marginBottom={spacing} paddingX={1}>
               <Box>
-                <Text color="cyan" bold>✦ </Text>
+                <Text color="cyan" bold>* </Text>
                 <Text color="cyan">{m.text}</Text>
               </Box>
             </Box>
           );
         }
         if (m.role === 'thinking') {
-          const display = verbose ? m.text : m.text.length > 200 ? m.text.slice(0, 200) + '…' : m.text;
+          const display = verbose ? m.text : m.text.length > 200 ? m.text.slice(0, 200) + '...' : m.text;
           return (
             <Box key={i} flexDirection="column" marginBottom={spacing} paddingX={1}>
-              <Text color="gray" italic>✻ {display}</Text>
+              <Text color="gray" italic>* {display}</Text>
             </Box>
           );
         }
@@ -98,7 +98,7 @@ export function MessageList({ messages, verbose = false }: Props) {
         }
         return (
           <Box key={i} marginBottom={spacing} paddingX={1}>
-            <Text color="red">✗ {m.text}</Text>
+            <Text color="red">x {m.text}</Text>
           </Box>
         );
       })}

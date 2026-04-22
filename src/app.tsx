@@ -37,7 +37,7 @@ export function App({ settings, modelOverride, oneShot, onRequestOAuth }: Props)
         <Text color="cyan">
           <Spinner type="dots" />
         </Text>
-        <Text dimColor> detecting auth…</Text>
+        <Text dimColor> detecting auth...</Text>
       </Box>
     );
   }

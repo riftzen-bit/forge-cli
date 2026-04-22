@@ -12,14 +12,14 @@ export function CommandPalette({ commands, cursor }: Props) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginTop={1}>
       <Box marginBottom={1}>
-        <Text dimColor>slash commands · ↑/↓ move · tab complete · esc clear</Text>
+        <Text dimColor>slash commands · up/dn move · tab complete · esc clear</Text>
       </Box>
       {commands.map((c, i) => {
         const active = i === cursor;
         return (
           <Box key={c.name}>
             <Text color={active ? 'cyan' : undefined} bold={active}>
-              {active ? '❯ ' : '  '}/{c.name}
+              {active ? '> ' : '  '}/{c.name}
             </Text>
             <Text dimColor>{'  '}{c.usage ?? c.hint}</Text>
           </Box>

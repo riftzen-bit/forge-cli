@@ -97,7 +97,7 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
               return (
                 <Box key={opt.id}>
                   <Text color={active ? 'cyan' : undefined} bold={active}>
-                    {active ? '❯ ' : '  '}{opt.label}
+                    {active ? '> ' : '  '}{opt.label}
                   </Text>
                   <Text dimColor>  {opt.hint}</Text>
                 </Box>
@@ -105,7 +105,7 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
             })}
           </Box>
           <Box marginTop={1}>
-            <Text dimColor>↑/↓ or j/k to move · enter to select · q to quit</Text>
+            <Text dimColor>up/dn or j/k to move · enter to select · q to quit</Text>
           </Box>
         </>
       )}
@@ -117,13 +117,13 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
           <Text dimColor>, then press Enter</Text>
           <Text dimColor>target: <Text italic>{primaryTokenPath()}</Text> (hidden, chmod 600)</Text>
           <Box marginTop={1}>
-            <Text color="green" bold>❯ </Text>
+            <Text color="green" bold>{'> '}</Text>
             <TextInput
               value={token}
               onChange={setToken}
               onSubmit={submit}
               mask="•"
-              placeholder={`${TOKEN_PREFIX}…`}
+              placeholder={`${TOKEN_PREFIX}...`}
             />
           </Box>
           <Box marginTop={1}>
@@ -132,12 +132,12 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
         </>
       )}
 
-      {phase === 'saving' && <Text color="yellow">● saving token…</Text>}
+      {phase === 'saving' && <Text color="yellow">● saving token...</Text>}
 
       {phase === 'done' && (
         <Box flexDirection="column">
           <Box>
-            <Text color="green">✓ </Text>
+            <Text color="green">v </Text>
             <Text>token saved</Text>
           </Box>
           <Text dimColor>{savedPath}</Text>
@@ -147,7 +147,7 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
       {phase === 'error' && (
         <Box flexDirection="column">
           <Box>
-            <Text color="red">✗ </Text>
+            <Text color="red">x </Text>
             <Text>{message}</Text>
           </Box>
           <Text dimColor>press enter/esc to go back</Text>

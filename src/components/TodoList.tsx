@@ -23,9 +23,9 @@ export function TodoList({ todos }: Props) {
 }
 
 function mark(s: Todo['status']): string {
-  if (s === 'done') return '✓';
-  if (s === 'doing') return '◐';
-  return '○';
+  if (s === 'done') return 'v';
+  if (s === 'doing') return '~';
+  return 'o';
 }
 
 function markColor(s: Todo['status']): 'green' | 'yellow' | 'gray' {

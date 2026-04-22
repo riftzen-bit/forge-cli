@@ -37,7 +37,7 @@ async function pasteFlow(): Promise<void> {
       ].join('\n'),
     );
 
-    const raw = await rl.question('paste token ❯ ');
+    const raw = await rl.question('paste token > ');
     const token = raw.trim();
 
     if (!token) {

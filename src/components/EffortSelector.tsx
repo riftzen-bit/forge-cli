@@ -29,7 +29,7 @@ export function EffortSelector({ current, onSelect, onCancel }: Props) {
         paddingY={1}
       >
         <Box>
-          <Text color="cyan" bold>✻ </Text>
+          <Text color="cyan" bold>* </Text>
           <Text bold>Thinking Effort</Text>
         </Box>
         <Box marginTop={1}>
@@ -44,7 +44,7 @@ export function EffortSelector({ current, onSelect, onCancel }: Props) {
             return (
               <Box key={lvl}>
                 <Text color={focused ? 'cyan' : 'white'} bold={focused}>
-                  {focused ? '❯ ' : '  '}
+                  {focused ? '> ' : '  '}
                   {lvl.padEnd(8)}
                 </Text>
                 <Text dimColor>{String(budget).padStart(6)} thinking tokens</Text>
@@ -55,7 +55,7 @@ export function EffortSelector({ current, onSelect, onCancel }: Props) {
         </Box>
 
         <Box marginTop={1}>
-          <Text dimColor>↑/↓ navigate · Enter apply · Esc cancel</Text>
+          <Text dimColor>up/dn navigate · Enter apply · Esc cancel</Text>
         </Box>
       </Box>
 

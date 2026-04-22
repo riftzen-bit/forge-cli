@@ -54,7 +54,7 @@ export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Prop
     <Box flexDirection="column" paddingLeft={4}>
       {shown.map((l, i) => renderLine(l, i, numW, termCols))}
       {truncated && (
-        <Text dimColor>{`  … ${hidden} more line${hidden === 1 ? '' : 's'}`}</Text>
+        <Text dimColor>{`  ... ${hidden} more line${hidden === 1 ? '' : 's'}`}</Text>
       )}
     </Box>
   );
@@ -63,7 +63,7 @@ export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Prop
 function renderLine(l: DLine, key: number, numW: number, cols: number) {
   if (l.kind === 'gap') {
     return (
-      <Text key={key} dimColor>{`${' '.repeat(numW)}   …`}</Text>
+      <Text key={key} dimColor>{`${' '.repeat(numW)}   ...`}</Text>
     );
   }
   if (l.kind === 'ctx') {

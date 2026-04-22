@@ -32,7 +32,7 @@ export function ModelSelector({ current, onSelect, onCancel }: Props) {
         paddingY={1}
       >
         <Box>
-          <Text color="cyan" bold>✻ </Text>
+          <Text color="cyan" bold>* </Text>
           <Text bold>Select Model</Text>
         </Box>
         <Box marginTop={1}>
@@ -46,7 +46,7 @@ export function ModelSelector({ current, onSelect, onCancel }: Props) {
             return (
               <Box key={m.id}>
                 <Text color={focused ? 'cyan' : 'white'} bold={focused}>
-                  {focused ? '❯ ' : '  '}
+                  {focused ? '> ' : '  '}
                   {m.label.padEnd(14)}
                 </Text>
                 <Text dimColor>{m.id}</Text>
@@ -57,7 +57,7 @@ export function ModelSelector({ current, onSelect, onCancel }: Props) {
         </Box>
 
         <Box marginTop={1}>
-          <Text dimColor>↑/↓ navigate · Enter apply · Esc cancel</Text>
+          <Text dimColor>up/dn navigate · Enter apply · Esc cancel</Text>
         </Box>
       </Box>
 

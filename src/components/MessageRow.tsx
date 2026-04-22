@@ -2,6 +2,8 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { Diff, computeDiffStats } from './Diff.js';
 import type { ChatMessage } from './MessageList.js';
+import { getTheme } from '../ui/theme.js';
+import { figures } from '../ui/figures.js';
 
 type Props = { message: ChatMessage; verbose?: boolean };
 
@@ -43,10 +45,15 @@ function formatToolInput(input: Record<string, unknown>): string[] {
 }
 
 export function MessageRow({ message: m, verbose = false }: Props) {
+  const t = getTheme();
+
   if (m.role === 'user') {
     return (
       <Box flexDirection="column" marginBottom={1} paddingX={1}>
-        <Text backgroundColor="gray" color="white"> {m.text} </Text>
+        <Box>
+          <Text color={t.subtle}>{figures.pointer} </Text>
+          <Text backgroundColor={t.userMessageBackground} color={t.text}> {m.text} </Text>
+        </Box>
       </Box>
     );
   }
@@ -54,22 +61,22 @@ export function MessageRow({ message: m, verbose = false }: Props) {
     return (
       <Box flexDirection="column" marginBottom={1} paddingX={1}>
         <Box>
-          <Text color="cyan" bold>✦ </Text>
-          <Text color="cyan">{m.text}</Text>
+          <Text color={t.claude} bold>{figures.bullet} </Text>
+          <Text>{m.text}</Text>
         </Box>
       </Box>
     );
   }
   if (m.role === 'thinking') {
-    const display = verbose ? m.text : m.text.length > 800 ? m.text.slice(0, 800) + '…' : m.text;
+    const display = verbose ? m.text : m.text.length > 800 ? m.text.slice(0, 800) + figures.ellipsis : m.text;
     return (
       <Box flexDirection="column" marginBottom={1} paddingX={1}>
         <Box>
-          <Text color="magenta" bold>✻ Thought </Text>
-          <Text dimColor>({m.text.length} chars)</Text>
+          <Text color={t.subtle} italic>Thought </Text>
+          <Text color={t.subtle} dimColor>({m.text.length} chars)</Text>
         </Box>
         <Box paddingLeft={2}>
-          <Text color="magenta" italic>{display}</Text>
+          <Text color={t.subtle} italic>{display}</Text>
         </Box>
       </Box>
     );
@@ -86,12 +93,12 @@ export function MessageRow({ message: m, verbose = false }: Props) {
       return (
         <Box flexDirection="column" marginBottom={1} paddingX={1}>
           <Box>
-            <Text color="green">● </Text>
+            <Text color={t.claude}>{figures.bullet} </Text>
             <Text bold>{tagPrefix}Update</Text>
-            <Text>({filePath ?? m.text})</Text>
+            <Text color={t.subtle}> ({filePath ?? m.text})</Text>
           </Box>
           <Box paddingLeft={2}>
-            <Text dimColor>{`└ Added ${adds} line${adds === 1 ? '' : 's'}, removed ${dels} line${dels === 1 ? '' : 's'}`}</Text>
+            <Text color={t.subtle}>{`${figures.corner} Added ${adds} line${adds === 1 ? '' : 's'}, removed ${dels} line${dels === 1 ? '' : 's'}`}</Text>
           </Box>
           <Diff oldText={diff.old} newText={diff.next} />
         </Box>
@@ -102,12 +109,12 @@ export function MessageRow({ message: m, verbose = false }: Props) {
       return (
         <Box flexDirection="column" marginBottom={1} paddingX={1}>
           <Box>
-            <Text color="green">● </Text>
+            <Text color={t.claude}>{figures.bullet} </Text>
             <Text bold>{tagPrefix}Create</Text>
-            <Text>({filePath ?? m.text})</Text>
+            <Text color={t.subtle}> ({filePath ?? m.text})</Text>
           </Box>
           <Box paddingLeft={2}>
-            <Text dimColor>{`└ Wrote ${lineCount} line${lineCount === 1 ? '' : 's'}`}</Text>
+            <Text color={t.subtle}>{`${figures.corner} Wrote ${lineCount} line${lineCount === 1 ? '' : 's'}`}</Text>
           </Box>
           {verbose && <Diff oldText="" newText={diff.next} />}
         </Box>
@@ -117,14 +124,14 @@ export function MessageRow({ message: m, verbose = false }: Props) {
     return (
       <Box flexDirection="column" marginBottom={1} paddingX={1}>
         <Box>
-          <Text color="cyan">● </Text>
+          <Text color={t.claude}>{figures.bullet} </Text>
           <Text bold>{m.tool}</Text>
-          <Text dimColor>  {m.text}</Text>
+          <Text color={t.subtle}>  {m.text}</Text>
         </Box>
         {verbose && (
           <Box flexDirection="column" paddingLeft={4} marginTop={0}>
             {formatToolInput(m.input).map((line, j) => (
-              <Text key={j} dimColor>{line}</Text>
+              <Text key={j} color={t.subtle}>{line}</Text>
             ))}
           </Box>
         )}
@@ -134,13 +141,13 @@ export function MessageRow({ message: m, verbose = false }: Props) {
   if (m.role === 'system') {
     return (
       <Box marginBottom={1} paddingX={1}>
-        <Text dimColor>· {m.text}</Text>
+        <Text color={t.subtle}>{figures.arrowRight} {m.text}</Text>
       </Box>
     );
   }
   return (
     <Box marginBottom={1} paddingX={1}>
-      <Text color="red">✗ {m.text}</Text>
+      <Text color={t.error}>{figures.cross} {m.text}</Text>
     </Box>
   );
 }
