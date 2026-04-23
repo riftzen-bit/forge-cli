@@ -20,11 +20,11 @@ export async function runSetupTokenCapture(): Promise<CaptureResult> {
   process.stdout.write(
     [
       '',
-      '────────────────────────────────────────────────────────────────',
-      '  Launching `claude setup-token`. Follow the browser prompts.',
-      '  When Claude Code prints your token, Forge will capture it',
-      '  and save it to a hidden file inside the install directory.',
-      '────────────────────────────────────────────────────────────────',
+      '----------------------------------------------------------------',
+      '  launching `claude setup-token`. follow the browser prompts.',
+      '  forge will capture the printed token and save it to a',
+      '  hidden file inside the install directory.',
+      '----------------------------------------------------------------',
       '',
     ].join('\n'),
   );

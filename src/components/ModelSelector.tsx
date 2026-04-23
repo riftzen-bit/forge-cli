@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { MODELS, labelFor } from '../agent/models.js';
+import { getTheme } from '../ui/theme.js';
 
 type Props = {
   current: string;
@@ -9,10 +10,8 @@ type Props = {
 };
 
 export function ModelSelector({ current, onSelect, onCancel }: Props) {
-  const startIdx = Math.max(
-    0,
-    MODELS.findIndex((m) => m.id === current),
-  );
+  const t = getTheme();
+  const startIdx = Math.max(0, MODELS.findIndex((m) => m.id === current));
   const [idx, setIdx] = useState(startIdx);
 
   useInput((_, key) => {
@@ -24,46 +23,29 @@ export function ModelSelector({ current, onSelect, onCancel }: Props) {
 
   return (
     <Box flexDirection="column">
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor="cyan"
-        paddingX={2}
-        paddingY={1}
-      >
-        <Box>
-          <Text color="cyan" bold>* </Text>
-          <Text bold>Select Model</Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>applies instantly to this session · also saved as default</Text>
-        </Box>
-
-        <Box flexDirection="column" marginTop={1}>
-          {MODELS.map((m, i) => {
-            const focused = i === idx;
-            const active = m.id === current;
-            return (
-              <Box key={m.id}>
-                <Text color={focused ? 'cyan' : 'white'} bold={focused}>
-                  {focused ? '> ' : '  '}
-                  {m.label.padEnd(14)}
-                </Text>
-                <Text dimColor>{m.id}</Text>
-                {active && <Text color="green">  ● active</Text>}
-              </Box>
-            );
-          })}
-        </Box>
-
-        <Box marginTop={1}>
-          <Text dimColor>up/dn navigate · Enter apply · Esc cancel</Text>
-        </Box>
+      <Text color={t.accent} bold>-- select model --</Text>
+      <Text color={t.muted}>applies to this session, saved as default</Text>
+      <Box flexDirection="column" marginTop={1}>
+        {MODELS.map((m, i) => {
+          const focused = i === idx;
+          const active = m.id === current;
+          return (
+            <Box key={m.id}>
+              <Text color={focused ? t.accent : t.muted}>
+                {focused ? '> ' : '  '}
+              </Text>
+              <Text color={focused ? t.accent : t.text} bold={focused}>
+                {m.label.padEnd(14)}
+              </Text>
+              <Text color={t.muted}>{m.id}</Text>
+              {active && <Text color={t.success}>  * active</Text>}
+            </Box>
+          );
+        })}
       </Box>
-
-      <Box paddingX={2} marginTop={1}>
-        <Text dimColor>current: </Text>
-        <Text color="cyan">{labelFor(current)}</Text>
+      <Box marginTop={1}>
+        <Text color={t.muted}>up/dn move, enter apply, esc cancel -- current: </Text>
+        <Text color={t.accent}>{labelFor(current)}</Text>
       </Box>
     </Box>
   );

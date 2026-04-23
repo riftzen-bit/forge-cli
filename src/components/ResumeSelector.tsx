@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { listSessions, formatTimestamp, truncate, type SessionSummary } from '../session/store.js';
+import { getTheme } from '../ui/theme.js';
 
 type Props = {
   onSelect: (session: SessionSummary) => void;
@@ -8,6 +9,7 @@ type Props = {
 };
 
 export function ResumeSelector({ onSelect, onCancel }: Props) {
+  const t = getTheme();
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [idx, setIdx] = useState(0);
 
@@ -31,52 +33,39 @@ export function ResumeSelector({ onSelect, onCancel }: Props) {
 
   return (
     <Box flexDirection="column">
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor="cyan"
-        paddingX={2}
-        paddingY={1}
-      >
-        <Box>
-          <Text color="cyan" bold>* </Text>
-          <Text bold>Resume Session</Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>pick a past chat to continue · Enter resumes it here</Text>
-        </Box>
+      <Text color={t.accent} bold>-- resume session --</Text>
+      <Text color={t.muted}>pick a past chat to continue</Text>
 
-        {sessions === null ? (
-          <Box marginTop={1}>
-            <Text dimColor>loading sessions...</Text>
-          </Box>
-        ) : sessions.length === 0 ? (
-          <Box marginTop={1}>
-            <Text dimColor>no past sessions found in ~/.claude/projects/</Text>
-          </Box>
-        ) : (
-          <Box flexDirection="column" marginTop={1}>
-            {sessions.map((s, i) => {
-              const focused = i === idx;
-              return (
-                <Box key={s.id} flexDirection="column">
-                  <Box>
-                    <Text color={focused ? 'cyan' : 'white'} bold={focused}>
-                      {focused ? '> ' : '  '}
-                      {formatTimestamp(s.mtime).padEnd(10)}
-                    </Text>
-                    <Text dimColor>{s.id.slice(0, 8)}  </Text>
-                    <Text>{truncate(s.preview, 60)}</Text>
-                  </Box>
-                </Box>
-              );
-            })}
-          </Box>
-        )}
-
+      {sessions === null ? (
         <Box marginTop={1}>
-          <Text dimColor>up/dn navigate · Enter resume · Esc cancel</Text>
+          <Text color={t.muted}>loading sessions...</Text>
         </Box>
+      ) : sessions.length === 0 ? (
+        <Box marginTop={1}>
+          <Text color={t.muted}>no past sessions found in ~/.claude/projects/</Text>
+        </Box>
+      ) : (
+        <Box flexDirection="column" marginTop={1}>
+          {sessions.map((s, i) => {
+            const focused = i === idx;
+            return (
+              <Box key={s.id}>
+                <Text color={focused ? t.accent : t.muted}>
+                  {focused ? '> ' : '  '}
+                </Text>
+                <Text color={focused ? t.accent : t.text} bold={focused}>
+                  {formatTimestamp(s.mtime).padEnd(10)}
+                </Text>
+                <Text color={t.muted}>{s.id.slice(0, 8)}  </Text>
+                <Text color={t.text}>{truncate(s.preview, 60)}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+
+      <Box marginTop={1}>
+        <Text color={t.muted}>up/dn move, enter resume, esc cancel</Text>
       </Box>
     </Box>
   );

@@ -27,7 +27,7 @@ async function pasteFlow(): Promise<void> {
     output.write(
       [
         '',
-        'Forge — token setup',
+        'Forge -- token setup',
         '',
         '  1. Visit https://console.anthropic.com/settings/keys',
         '  2. Create or copy an API key that starts with "sk-ant-".',

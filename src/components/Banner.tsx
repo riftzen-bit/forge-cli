@@ -1,39 +1,61 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Clawd } from './Clawd.js';
 import { getTheme } from '../ui/theme.js';
 
-type Props = { cwd?: string };
+const LOGO = [
+  '  ███████╗ ██████╗ ██████╗  ██████╗ ███████╗',
+  '  ██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝',
+  '  █████╗  ██║   ██║██████╔╝██║  ███╗█████╗  ',
+  '  ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  ',
+  '  ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗',
+  '  ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝',
+];
 
-export function Banner({ cwd }: Props) {
+type Props = { cwd?: string; version?: string };
+
+export function Banner({ cwd, version = '0.1' }: Props) {
   const t = getTheme();
+  const path = shortenCwd(cwd ?? '');
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box
-        flexDirection="row"
         borderStyle="round"
-        borderColor={t.claude}
+        borderColor={t.accent}
         paddingX={2}
         paddingY={0}
+        flexDirection="column"
       >
-        <Box marginRight={2}>
-          <Clawd />
+        {LOGO.map((line, i) => (
+          <Text key={i} color={t.accent} bold>{line}</Text>
+        ))}
+        <Box marginTop={1}>
+          <Text color={t.accentDim}>  terminal coding agent</Text>
+          <Text color={t.muted}>   v{version}</Text>
+          <Text color={t.muted}>   {path}</Text>
         </Box>
-        <Box flexDirection="column" justifyContent="center">
-          <Text color={t.claude} bold>Welcome to Forge</Text>
-          <Text color={t.subtle}>an agentic coding assistant</Text>
-          {cwd && (
-            <Box marginTop={1}>
-              <Text color={t.subtle}>cwd </Text>
-              <Text>{shortenCwd(cwd)}</Text>
-            </Box>
-          )}
-        </Box>
+      </Box>
+      <Box marginTop={1} paddingX={1}>
+        <Text color={t.muted}>type </Text>
+        <Text color={t.accent} bold>/</Text>
+        <Text color={t.muted}> for commands  </Text>
+        <Text color={t.muted}>|  </Text>
+        <Text color={t.accent} bold>ctrl+o</Text>
+        <Text color={t.muted}> details  </Text>
+        <Text color={t.muted}>|  </Text>
+        <Text color={t.accent} bold>ctrl+c</Text>
+        <Text color={t.muted}> quit</Text>
       </Box>
     </Box>
   );
 }
 
 function shortenCwd(cwd: string): string {
-  return cwd.length > 60 ? '...' + cwd.slice(-59) : cwd;
+  if (!cwd) return '';
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  let s = cwd;
+  if (home && s.toLowerCase().startsWith(home.toLowerCase())) {
+    s = '~' + s.slice(home.length);
+  }
+  s = s.replace(/\\/g, '/');
+  return s.length > 60 ? '...' + s.slice(-59) : s;
 }

@@ -3,33 +3,44 @@ import { loadToken } from '../config/tokenStore.js';
 import { resolveModel } from './models.js';
 import { buildSystemPrompt } from './systemPrompt.js';
 import { budgetFor, type Effort } from './effort.js';
-import { FileLockManager, lockKeyFor, type Release } from './fileLocks.js';
+import { FileCoordinator, lockKeyFor, type Release } from './fileLocks.js';
 import { estimateTokens, contextState, COMPACT_THRESHOLD } from './contextBudget.js';
-import type { PermissionRule, Hook, McpServer } from '../config/settings.js';
+import type { PermissionRule, Hook } from '../config/settings.js';
 import { matchRule } from './permissions.js';
 import { runHooks } from './hooks.js';
 
 type ClientOptions = {
   model: string;
   effort?: Effort;
-  locks?: FileLockManager;
+  locks?: FileCoordinator;
   agentTag?: string;
   planMode?: boolean;
   permissionRules?: PermissionRule[];
   hooks?: { preTool: Hook[]; postTool: Hook[] };
-  mcpServers?: Record<string, McpServer>;
+  mcpServers?: Record<string, unknown>;
+  extraAllowedTools?: string[];
 };
 
-export type ToolEvent = {
+export type ToolStartEvent = {
+  id: string;
   name: string;
   input: Record<string, unknown>;
+};
+
+export type ToolResultEvent = {
+  id: string;
+  ok: boolean;
+  ms: number;
+  preview?: string;
+  lines?: number;
 };
 
 export type StreamCallbacks = {
   onThinking?: (delta: string) => void;
   onThinkingDone?: () => void;
   onText?: (delta: string) => void;
-  onTool?: (tool: ToolEvent) => void;
+  onToolStart?: (tool: ToolStartEvent) => void;
+  onToolResult?: (result: ToolResultEvent) => void;
   onSessionId?: (id: string) => void;
   onTokens?: (total: number) => void;
   onCompactWarn?: (total: number) => void;
@@ -42,14 +53,16 @@ export class AgentClient {
   private pendingResume: string | undefined;
   private lastSessionId: string | undefined;
   private history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  private locks: FileLockManager | undefined;
+  private locks: FileCoordinator | undefined;
   private pendingReleases = new Map<string, Release>();
+  private toolStartedAt = new Map<string, number>();
   private planMode: boolean;
   private tokenTotal = 0;
   private warned = false;
   private permissionRules: PermissionRule[];
   private hooks: { preTool: Hook[]; postTool: Hook[] };
-  private mcpServers: Record<string, McpServer>;
+  private mcpServers: Record<string, unknown>;
+  private extraAllowedTools: string[];
   readonly agentTag: string | undefined;
 
   constructor(opts: ClientOptions) {
@@ -61,6 +74,7 @@ export class AgentClient {
     this.permissionRules = opts.permissionRules ?? [];
     this.hooks = opts.hooks ?? { preTool: [], postTool: [] };
     this.mcpServers = opts.mcpServers ?? {};
+    this.extraAllowedTools = opts.extraAllowedTools ?? [];
   }
 
   setPermissionRules(rules: PermissionRule[]): void {
@@ -152,9 +166,9 @@ export class AgentClient {
         await runHooks(this.hooks.preTool, { tool: toolName, input, cwd: process.cwd(), phase: 'pre' });
       }
       if (locks) {
-        const key = lockKeyFor(toolName, input, process.cwd());
-        if (key) {
-          const release = await locks.acquire(key);
+        const req = lockKeyFor(toolName, input, process.cwd());
+        if (req) {
+          const release = await locks.acquire(req.key, req.mode);
           this.pendingReleases.set(opts.toolUseID, release);
         }
       }
@@ -189,7 +203,14 @@ export class AgentClient {
       model: this.model,
       cwd,
       permissionMode: this.planMode ? 'plan' : baseMode,
-      allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
+      allowedTools: [
+        'Read', 'Write', 'Edit',
+        'Glob', 'Grep', 'Bash',
+        'WebFetch', 'WebSearch',
+        'NotebookRead', 'NotebookEdit',
+        'TodoWrite', 'Task',
+        ...this.extraAllowedTools,
+      ],
       systemPrompt,
       maxThinkingTokens: budgetFor(this.effort),
       includePartialMessages: true,
@@ -202,6 +223,8 @@ export class AgentClient {
     if (this.pendingResume) {
       options.resume = this.pendingResume;
       this.pendingResume = undefined;
+    } else if (this.lastSessionId) {
+      options.resume = this.lastSessionId;
     }
 
     return options;
@@ -227,6 +250,7 @@ export class AgentClient {
     const stream = query({ prompt: userText, options });
 
     let out = '';
+    let sawRealUsage = false;
     try {
       for await (const event of stream) {
         const sid = (event as { session_id?: string }).session_id;
@@ -253,11 +277,26 @@ export class AgentClient {
         }
 
         if (event.type === 'assistant' && event.message?.content) {
+          const usage = (event.message as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
+          if (usage) {
+            const live =
+              (usage.input_tokens ?? 0) +
+              (usage.output_tokens ?? 0) +
+              (usage.cache_read_input_tokens ?? 0) +
+              (usage.cache_creation_input_tokens ?? 0);
+            if (live > 0) {
+              this.tokenTotal = live;
+              sawRealUsage = true;
+              cb.onTokens?.(live);
+            }
+          }
           for (const block of event.message.content) {
             if (block.type === 'text') out += block.text;
             else if (block.type === 'tool_use') {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
-              cb.onTool?.({ name: block.name, input: toolInput });
+              const id = (block as { id?: string }).id ?? `${Date.now()}-${Math.random()}`;
+              this.toolStartedAt.set(id, Date.now());
+              cb.onToolStart?.({ id, name: block.name, input: toolInput });
               if (this.hooks.postTool.length > 0) {
                 void runHooks(this.hooks.postTool, {
                   tool: block.name,
@@ -270,17 +309,50 @@ export class AgentClient {
           }
         }
 
+        if (event.type === 'result') {
+          const usage = (event as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
+          if (usage) {
+            const total =
+              (usage.input_tokens ?? 0) +
+              (usage.output_tokens ?? 0) +
+              (usage.cache_read_input_tokens ?? 0) +
+              (usage.cache_creation_input_tokens ?? 0);
+            if (total > 0) {
+              this.tokenTotal = total;
+              sawRealUsage = true;
+              cb.onTokens?.(total);
+            }
+          }
+        }
+
         if (event.type === 'user' && event.message?.content) {
           const content = event.message.content as unknown;
           if (Array.isArray(content)) {
             for (const block of content) {
-              const b = block as { type?: string; tool_use_id?: string };
+              const b = block as {
+                type?: string;
+                tool_use_id?: string;
+                is_error?: boolean;
+                content?: unknown;
+              };
               if (b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
                 const release = this.pendingReleases.get(b.tool_use_id);
                 if (release) {
                   release();
                   this.pendingReleases.delete(b.tool_use_id);
                 }
+                const started = this.toolStartedAt.get(b.tool_use_id);
+                const ms = started ? Date.now() - started : 0;
+                this.toolStartedAt.delete(b.tool_use_id);
+                const { preview, lines } = extractStats(b.content);
+                const evt: ToolResultEvent = {
+                  id: b.tool_use_id,
+                  ok: !b.is_error,
+                  ms,
+                };
+                if (preview !== undefined) evt.preview = preview;
+                if (lines !== undefined) evt.lines = lines;
+                cb.onToolResult?.(evt);
               }
             }
           }
@@ -291,8 +363,41 @@ export class AgentClient {
     }
 
     this.history.push({ role: 'assistant', content: out });
-    this.recountHistory();
+    if (!sawRealUsage) this.recountHistory();
     cb.onTokens?.(this.tokenTotal);
     return out.trim() || '(no output)';
   }
+}
+
+function extractStats(content: unknown): { preview?: string; lines?: number } {
+  const text = pickText(content);
+  if (text === undefined) return {};
+  return { preview: firstLine(text), lines: countLines(text) };
+}
+
+function pickText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    for (const c of content) {
+      const b = c as { type?: string; text?: string };
+      if (b?.type === 'text' && typeof b.text === 'string') return b.text;
+    }
+  }
+  return undefined;
+}
+
+function countLines(s: string): number {
+  const trimmed = s.replace(/\s+$/g, '');
+  if (!trimmed) return 0;
+  let n = 1;
+  for (let i = 0; i < trimmed.length; i++) if (trimmed.charCodeAt(i) === 10) n++;
+  return n;
+}
+
+function firstLine(s: string): string {
+  const t = s.replace(/^\s+|\s+$/g, '');
+  if (!t) return '';
+  const nl = t.indexOf('\n');
+  const line = nl >= 0 ? t.slice(0, nl) : t;
+  return line.length > 100 ? line.slice(0, 99) + '...' : line;
 }

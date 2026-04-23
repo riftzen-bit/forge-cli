@@ -1,14 +1,20 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { Diff, computeDiffStats } from './Diff.js';
 import type { ChatMessage } from './MessageList.js';
 import { getTheme } from '../ui/theme.js';
-import { figures } from '../ui/figures.js';
+import { baseToolName, displayName } from './toolFormat.js';
+import { Markdown } from './Markdown.js';
 
 type Props = { message: ChatMessage; verbose?: boolean };
 
+function tagOf(tool: string): string | undefined {
+  const m = tool.match(/^\[([^\]]+)\]/);
+  return m?.[1];
+}
+
 function toolDiff(tool: string, input: Record<string, unknown>): { old: string; next: string } | null {
-  const base = baseTool(tool);
+  const base = baseToolName(tool);
   if (base === 'Edit') {
     const o = input['old_string'];
     const n = input['new_string'];
@@ -19,14 +25,6 @@ function toolDiff(tool: string, input: Record<string, unknown>): { old: string; 
     if (typeof c === 'string') return { old: '', next: c };
   }
   return null;
-}
-
-function baseTool(tool: string): string {
-  return tool.replace(/^\[[^\]]+\]\s*/, '');
-}
-
-function tagOf(tool: string): string | undefined {
-  return tool.match(/^\[([^\]]+)\]/)?.[1];
 }
 
 function formatToolInput(input: Record<string, unknown>): string[] {
@@ -44,95 +42,129 @@ function formatToolInput(input: Record<string, unknown>): string[] {
   return lines;
 }
 
-export function MessageRow({ message: m, verbose = false }: Props) {
+function statusGlyph(status: 'run' | 'ok' | 'err' | undefined, t: ReturnType<typeof getTheme>) {
+  if (!status || status === 'run') return <Text color={t.warn}>{'◇'}</Text>;
+  if (status === 'ok') return <Text color={t.success}>{'◆'}</Text>;
+  return <Text color={t.error}>{'◆'}</Text>;
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+// Strip leading `N->` line-number gutter that Read emits, and truncate to 1 line.
+function cleanPreview(s: string): string {
+  const first = s.split(/\r?\n/, 1)[0] ?? '';
+  const stripped = first.replace(/^\s*\d+\s*(?:→|->)\s*/, '');
+  return stripped.length > 120 ? stripped.slice(0, 117) + '...' : stripped;
+}
+
+export const MessageRow = memo(function MessageRow({ message: m, verbose = false }: Props) {
   const t = getTheme();
 
   if (m.role === 'user') {
     return (
-      <Box flexDirection="column" marginBottom={1} paddingX={1}>
+      <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Box>
-          <Text color={t.subtle}>{figures.pointer} </Text>
-          <Text backgroundColor={t.userMessageBackground} color={t.text}> {m.text} </Text>
+          <Text color={t.info} bold>{'> '}</Text>
+          <Text color={t.info}>you</Text>
+        </Box>
+        <Box
+          borderStyle="single"
+          borderLeft
+          borderTop={false}
+          borderRight={false}
+          borderBottom={false}
+          borderColor={t.info}
+          paddingLeft={1}
+        >
+          <Text color={t.text}>{m.text}</Text>
         </Box>
       </Box>
     );
   }
   if (m.role === 'assistant') {
     return (
-      <Box flexDirection="column" marginBottom={1} paddingX={1}>
+      <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Box>
-          <Text color={t.claude} bold>{figures.bullet} </Text>
-          <Text>{m.text}</Text>
+          <Text color={t.accent} bold>{'* '}</Text>
+          <Text color={t.accent}>forge</Text>
+        </Box>
+        <Box
+          borderStyle="single"
+          borderLeft
+          borderTop={false}
+          borderRight={false}
+          borderBottom={false}
+          borderColor={t.accent}
+          paddingLeft={1}
+        >
+          <Markdown text={m.text} color={t.text} />
         </Box>
       </Box>
     );
   }
   if (m.role === 'thinking') {
-    const display = verbose ? m.text : m.text.length > 800 ? m.text.slice(0, 800) + figures.ellipsis : m.text;
+    const display = verbose ? m.text : m.text.length > 800 ? m.text.slice(0, 800) + '...' : m.text;
     return (
-      <Box flexDirection="column" marginBottom={1} paddingX={1}>
-        <Box>
-          <Text color={t.subtle} italic>Thought </Text>
-          <Text color={t.subtle} dimColor>({m.text.length} chars)</Text>
-        </Box>
-        <Box paddingLeft={2}>
-          <Text color={t.subtle} italic>{display}</Text>
-        </Box>
+      <Box
+        flexDirection="column"
+        marginBottom={1}
+        borderStyle="single"
+        borderLeft
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderColor={t.muted}
+        paddingLeft={1}
+      >
+        <Text color={t.muted}>thought ({m.text.length} chars)</Text>
+        <Text color={t.muted} italic>{display}</Text>
       </Box>
     );
   }
   if (m.role === 'tool') {
-    const base = baseTool(m.tool);
+    const base = baseToolName(m.tool);
     const tag = tagOf(m.tool);
     const tagPrefix = tag ? `[${tag}] ` : '';
     const diff = toolDiff(m.tool, m.input);
-    const filePath = typeof m.input['file_path'] === 'string' ? (m.input['file_path'] as string) : undefined;
+    const name = displayName(m.tool);
 
-    if (base === 'Edit' && diff) {
+    let stats = '';
+    if (diff && base === 'Edit') {
       const { adds, dels } = computeDiffStats(diff.old, diff.next);
-      return (
-        <Box flexDirection="column" marginBottom={1} paddingX={1}>
-          <Box>
-            <Text color={t.claude}>{figures.bullet} </Text>
-            <Text bold>{tagPrefix}Update</Text>
-            <Text color={t.subtle}> ({filePath ?? m.text})</Text>
-          </Box>
-          <Box paddingLeft={2}>
-            <Text color={t.subtle}>{`${figures.corner} Added ${adds} line${adds === 1 ? '' : 's'}, removed ${dels} line${dels === 1 ? '' : 's'}`}</Text>
-          </Box>
-          <Diff oldText={diff.old} newText={diff.next} />
-        </Box>
-      );
+      stats = ` +${adds} -${dels}`;
+    } else if (diff && base === 'Write') {
+      const { adds } = computeDiffStats(diff.old, diff.next);
+      stats = ` +${adds}`;
     }
-    if (base === 'Write' && diff) {
-      const lineCount = diff.next.split(/\r?\n/).length;
-      return (
-        <Box flexDirection="column" marginBottom={1} paddingX={1}>
-          <Box>
-            <Text color={t.claude}>{figures.bullet} </Text>
-            <Text bold>{tagPrefix}Create</Text>
-            <Text color={t.subtle}> ({filePath ?? m.text})</Text>
-          </Box>
-          <Box paddingLeft={2}>
-            <Text color={t.subtle}>{`${figures.corner} Wrote ${lineCount} line${lineCount === 1 ? '' : 's'}`}</Text>
-          </Box>
-          {verbose && <Diff oldText="" newText={diff.next} />}
-        </Box>
-      );
-    }
+
+    const args = m.text ?? '';
+    const dur = m.ms !== undefined ? formatMs(m.ms) : '';
 
     return (
-      <Box flexDirection="column" marginBottom={1} paddingX={1}>
+      <Box flexDirection="column">
         <Box>
-          <Text color={t.claude}>{figures.bullet} </Text>
-          <Text bold>{m.tool}</Text>
-          <Text color={t.subtle}>  {m.text}</Text>
+          {statusGlyph(m.status, t)}
+          <Text color={t.muted}> {tagPrefix}</Text>
+          <Text color={t.toolTag} bold>{name}</Text>
+          <Text color={t.text}>({args})</Text>
+          {stats && <Text color={t.accentDim}>{stats}</Text>}
+          {dur && <Text color={t.muted}>  {dur}</Text>}
         </Box>
-        {verbose && (
-          <Box flexDirection="column" paddingLeft={4} marginTop={0}>
+        {diff && base === 'Edit' && <Diff oldText={diff.old} newText={diff.next} />}
+        {verbose && diff && base === 'Write' && <Diff oldText={diff.old} newText={diff.next} />}
+        {verbose && !diff && (
+          <Box flexDirection="column" paddingLeft={2}>
             {formatToolInput(m.input).map((line, j) => (
-              <Text key={j} color={t.subtle}>{line}</Text>
+              <Text key={j} color={t.muted}>{line}</Text>
             ))}
+          </Box>
+        )}
+        {verbose && m.status === 'ok' && m.output && (
+          <Box paddingLeft={2}>
+            <Text color={t.muted}>{'└ '}{cleanPreview(m.output)}</Text>
           </Box>
         )}
       </Box>
@@ -140,14 +172,14 @@ export function MessageRow({ message: m, verbose = false }: Props) {
   }
   if (m.role === 'system') {
     return (
-      <Box marginBottom={1} paddingX={1}>
-        <Text color={t.subtle}>{figures.arrowRight} {m.text}</Text>
+      <Box>
+        <Text color={t.muted}>· {m.text}</Text>
       </Box>
     );
   }
   return (
-    <Box marginBottom={1} paddingX={1}>
-      <Text color={t.error}>{figures.cross} {m.text}</Text>
+    <Box>
+      <Text color={t.error}>! {m.text}</Text>
     </Box>
   );
-}
+});

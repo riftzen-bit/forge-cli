@@ -1,17 +1,29 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
-import Spinner from 'ink-spinner';
 import { getTheme } from '../ui/theme.js';
 
 type Props = {
-  label: string;
   text?: string;
   verbose?: boolean;
   maxLines?: number;
+  startedAt?: number;
 };
 
-export function ThinkingLine({ label, text, verbose = false, maxLines = 5 }: Props) {
+const TICKS = ['|', '/', '-', '\\'];
+
+export function ThinkingLine({ text, verbose = false, maxLines = 5, startedAt }: Props) {
   const t = getTheme();
+  const [tick, setTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTick((n) => (n + 1) % TICKS.length);
+      setNow(Date.now());
+    }, 250);
+    return () => clearInterval(id);
+  }, []);
+
   const condensed = text ? text.replace(/\s+/g, ' ').trim() : '';
   const width = Math.max(40, (process.stdout.columns ?? 100) - 6);
   const chunks: string[] = [];
@@ -20,20 +32,21 @@ export function ThinkingLine({ label, text, verbose = false, maxLines = 5 }: Pro
   }
   const visible = verbose ? chunks : chunks.slice(-maxLines);
   const charCount = condensed.length;
+  const elapsed = startedAt ? `${((now - startedAt) / 1000).toFixed(1)}s` : '';
 
   return (
-    <Box flexDirection="column" paddingX={1} marginTop={1}>
+    <Box flexDirection="column" marginTop={1}>
       <Box>
-        <Text color={t.claude} bold><Spinner type="dots" /></Text>
-        <Text color={t.claude} italic> {label}</Text>
-        <Text color={t.subtle}>... </Text>
+        <Text color={t.accent}>{TICKS[tick]}</Text>
+        <Text color={t.accentDim}> working</Text>
+        {elapsed && <Text color={t.muted}> {elapsed}</Text>}
         {charCount > 0 && (
-          <Text color={t.subtle}>({charCount} chars, ctrl+o to expand)</Text>
+          <Text color={t.muted}>  ({charCount} chars, ctrl+o expand)</Text>
         )}
       </Box>
       {visible.map((line, i) => (
         <Box key={i} paddingLeft={2}>
-          <Text color={t.subtle} italic>{line}</Text>
+          <Text color={t.muted} italic>{line}</Text>
         </Box>
       ))}
     </Box>

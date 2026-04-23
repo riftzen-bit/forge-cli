@@ -1,20 +1,25 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { Todo } from '../agent/todos.js';
+import { getTheme } from '../ui/theme.js';
 
 type Props = { todos: Todo[] };
 
 export function TodoList({ todos }: Props) {
   if (todos.length === 0) return null;
+  const t = getTheme();
   return (
-    <Box flexDirection="column" paddingX={2} marginTop={1} borderStyle="round" borderColor="gray">
-      <Text color="cyan" bold>todos</Text>
-      {todos.map((t) => (
-        <Box key={t.id}>
-          <Text color={markColor(t.status)}>{mark(t.status)} </Text>
-          <Text dimColor>{t.id}. </Text>
-          <Text strikethrough={t.status === 'done'} color={t.status === 'done' ? 'gray' : undefined}>
-            {t.text}
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={t.accentDim}>todos:</Text>
+      {todos.map((td) => (
+        <Box key={td.id}>
+          <Text color={markColor(td.status, t)}>  {mark(td.status)} </Text>
+          <Text color={t.muted}>{td.id}. </Text>
+          <Text
+            color={td.status === 'done' ? t.muted : t.text}
+            strikethrough={td.status === 'done'}
+          >
+            {td.text}
           </Text>
         </Box>
       ))}
@@ -23,13 +28,13 @@ export function TodoList({ todos }: Props) {
 }
 
 function mark(s: Todo['status']): string {
-  if (s === 'done') return 'v';
-  if (s === 'doing') return '~';
-  return 'o';
+  if (s === 'done') return '[x]';
+  if (s === 'doing') return '[~]';
+  return '[ ]';
 }
 
-function markColor(s: Todo['status']): 'green' | 'yellow' | 'gray' {
-  if (s === 'done') return 'green';
-  if (s === 'doing') return 'yellow';
-  return 'gray';
+function markColor(s: Todo['status'], t: ReturnType<typeof getTheme>): string {
+  if (s === 'done') return t.success;
+  if (s === 'doing') return t.warn;
+  return t.muted;
 }

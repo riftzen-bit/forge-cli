@@ -13,7 +13,7 @@ export function registerSetCommand(program: Command): void {
 
   set
     .command('model <labelOrId>')
-    .description('Set default Claude model (Haiku 4.5 | Sornet 4.5 | Sornet 4.6 | Opus 4.7).')
+    .description('Set default model (Haiku 4.5 | Sonnet 4.5 | Sonnet 4.6 | Opus 4.7).')
     .action(async (labelOrId: string) => {
       const resolved = resolveModel(labelOrId);
       await saveSettings({ defaultModel: resolved });

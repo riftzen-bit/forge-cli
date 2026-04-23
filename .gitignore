@@ -8,3 +8,4 @@ dist
 .forge-token
 .backups/
 IMPLEMENTATION_PLAN.md
+.claude/

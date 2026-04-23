@@ -173,7 +173,7 @@ src/agent/permissions.ts       allow/deny rule matcher
 src/agent/hooks.ts             pre/post shell hook runner
 src/agent/models.ts            alias → id
 src/agent/effort.ts            Low..X-High → thinking token budget
-src/agent/systemPrompt.ts      loads systemprompt.txt (think-first directive prepended)
+src/agent/systemPrompt.ts      inlined SYSTEM_PROMPT + memory-file composition
 src/auth/                      OAuth + API-key paths, keychain, status detection
 src/config/                    paths, settings zod, token store
 src/commands/                  login, set, config, version, slash

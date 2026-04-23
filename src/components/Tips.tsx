@@ -2,14 +2,30 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../ui/theme.js';
 
+const EXAMPLES = [
+  'read src/server.ts and add a request-id middleware',
+  'run the tests and fix the first failure',
+  'build a react+vite todo app with tests',
+];
+
 export function Tips() {
   const t = getTheme();
   return (
-    <Box flexDirection="column" paddingX={2} marginBottom={1}>
-      <Text color={t.subtle}>Try asking:</Text>
-      <Text color={t.subtle}>  build a React todo app with Vite + tests</Text>
-      <Text color={t.subtle}>  read src/server.ts and add request-id middleware</Text>
-      <Text color={t.subtle}>  run the tests and fix the first failure</Text>
+    <Box
+      flexDirection="column"
+      marginBottom={1}
+      borderStyle="round"
+      borderColor={t.borderIdle}
+      paddingX={2}
+      paddingY={0}
+    >
+      <Text color={t.warn} bold>examples</Text>
+      {EXAMPLES.map((ex, i) => (
+        <Box key={i}>
+          <Text color={t.accent}>{'> '}</Text>
+          <Text color={t.text}>{ex}</Text>
+        </Box>
+      ))}
     </Box>
   );
 }

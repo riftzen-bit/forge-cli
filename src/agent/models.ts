@@ -5,8 +5,8 @@ export type ModelEntry = {
 
 export const MODELS: ModelEntry[] = [
   { id: 'claude-haiku-4-5',  label: 'Haiku 4.5'  },
-  { id: 'claude-sonnet-4-5', label: 'Sornet 4.5' },
-  { id: 'claude-sonnet-4-6', label: 'Sornet 4.6' },
+  { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { id: 'claude-opus-4-7',   label: 'Opus 4.7'   },
 ];
 

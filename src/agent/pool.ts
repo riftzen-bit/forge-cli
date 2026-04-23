@@ -1,11 +1,12 @@
 import { AgentClient } from './client.js';
-import { FileLockManager } from './fileLocks.js';
+import { FileCoordinator } from './fileLocks.js';
 import type { Effort } from './effort.js';
 
 export type PoolEvent =
   | { kind: 'thinking'; delta: string }
   | { kind: 'text'; delta: string }
-  | { kind: 'tool'; tool: string; input: Record<string, unknown> }
+  | { kind: 'toolStart'; id: string; tool: string; input: Record<string, unknown> }
+  | { kind: 'toolResult'; id: string; ok: boolean; ms: number; preview?: string; lines?: number }
   | { kind: 'done'; reply: string }
   | { kind: 'error'; message: string };
 
@@ -17,7 +18,15 @@ export type PoolConfig = {
 export type PoolResult = { index: number; tag: string; reply?: string; error?: string };
 
 export class AgentPool {
-  private locks = new FileLockManager();
+  private locks: FileCoordinator;
+
+  constructor(locks?: FileCoordinator) {
+    this.locks = locks ?? new FileCoordinator();
+  }
+
+  getLocks(): FileCoordinator {
+    return this.locks;
+  }
 
   async runParallel(
     tasks: string[],
@@ -36,7 +45,8 @@ export class AgentPool {
         .send(task, {
           onThinking: (delta) => onEvent(i, tag, { kind: 'thinking', delta }),
           onText: (delta) => onEvent(i, tag, { kind: 'text', delta }),
-          onTool: (t) => onEvent(i, tag, { kind: 'tool', tool: t.name, input: t.input }),
+          onToolStart: (t) => onEvent(i, tag, { kind: 'toolStart', id: t.id, tool: t.name, input: t.input }),
+          onToolResult: (r) => onEvent(i, tag, { kind: 'toolResult', id: r.id, ok: r.ok, ms: r.ms, preview: r.preview, lines: r.lines }),
         })
         .then<PoolResult>((reply) => {
           onEvent(i, tag, { kind: 'done', reply });

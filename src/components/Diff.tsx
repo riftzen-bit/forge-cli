@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
+import { getTheme } from '../ui/theme.js';
 
 type Props = { oldText: string; newText: string; contextLines?: number; maxLines?: number };
 
@@ -8,9 +9,6 @@ type DLine =
   | { kind: 'del'; text: string; oldNo: number }
   | { kind: 'add'; text: string; newNo: number }
   | { kind: 'gap' };
-
-const ADD_BG = '#14532d';
-const DEL_BG = '#5b1a1a';
 
 export function computeDiffStats(oldText: string, newText: string): { adds: number; dels: number } {
   const a = oldText.split(/\r?\n/);
@@ -31,7 +29,11 @@ export function computeDiffStats(oldText: string, newText: string): { adds: numb
 }
 
 export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Props) {
-  const lines = computeDiff(oldText, newText, contextLines);
+  const t = getTheme();
+  const lines = useMemo(
+    () => computeDiff(oldText, newText, contextLines),
+    [oldText, newText, contextLines],
+  );
   if (lines.length === 0) return null;
 
   const truncated = lines.length > maxLines;
@@ -48,40 +50,41 @@ export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Prop
     }),
   );
   const numW = String(maxNo).length;
-  const termCols = Math.max(40, (process.stdout.columns ?? 100) - 2);
 
   return (
     <Box flexDirection="column" paddingLeft={4}>
-      {shown.map((l, i) => renderLine(l, i, numW, termCols))}
+      {shown.map((l, i) => renderLine(l, i, numW, t))}
       {truncated && (
-        <Text dimColor>{`  ... ${hidden} more line${hidden === 1 ? '' : 's'}`}</Text>
+        <Text color={t.muted}>{`  ${' '.repeat(numW)}  ... ${hidden} more line${hidden === 1 ? '' : 's'}`}</Text>
       )}
     </Box>
   );
 }
 
-function renderLine(l: DLine, key: number, numW: number, cols: number) {
+function renderLine(l: DLine, key: number, numW: number, t: ReturnType<typeof getTheme>) {
   if (l.kind === 'gap') {
     return (
-      <Text key={key} dimColor>{`${' '.repeat(numW)}   ...`}</Text>
+      <Text key={key} color={t.muted}>{`${' '.repeat(numW)} ..`}</Text>
     );
   }
   if (l.kind === 'ctx') {
     const no = (l.newNo ?? l.oldNo ?? 0).toString().padStart(numW, ' ');
     return (
       <Box key={key}>
-        <Text dimColor>{`${no}   `}</Text>
-        <Text>{l.text}</Text>
+        <Text color={t.muted}>{`${no}   `}</Text>
+        <Text color={t.diffCtx}>{l.text || ' '}</Text>
       </Box>
     );
   }
   const sign = l.kind === 'add' ? '+' : '-';
   const no = (l.kind === 'add' ? l.newNo : l.oldNo).toString().padStart(numW, ' ');
-  const bg = l.kind === 'add' ? ADD_BG : DEL_BG;
-  const content = ` ${no} ${sign} ${l.text}`;
-  const padded = content.length < cols ? content + ' '.repeat(cols - content.length) : content;
+  const color = l.kind === 'add' ? t.diffAdd : t.diffDel;
   return (
-    <Text key={key} backgroundColor={bg}>{padded}</Text>
+    <Box key={key}>
+      <Text color={t.muted}>{`${no} `}</Text>
+      <Text color={color}>{sign} </Text>
+      <Text color={color}>{l.text || ' '}</Text>
+    </Box>
   );
 }
 

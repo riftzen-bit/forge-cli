@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
-import TextInput from 'ink-text-input';
+import { SimpleTextInput } from './SimpleTextInput.js';
 import { saveToken, primaryTokenPath } from '../config/tokenStore.js';
+import { getTheme } from '../ui/theme.js';
 
 type Phase = 'pick' | 'input' | 'saving' | 'done' | 'error';
 type OptionId = 'paste' | 'oauth' | 'quit';
@@ -14,12 +15,13 @@ type Props = {
 const TOKEN_PREFIX = 'sk-ant-';
 
 const OPTIONS: { id: OptionId; label: string; hint: string }[] = [
-  { id: 'paste', label: 'Paste an API token', hint: 'from console.anthropic.com/settings/keys' },
-  { id: 'oauth', label: 'Run `claude setup-token` (browser OAuth)', hint: 'uses your Claude Code subscription' },
-  { id: 'quit', label: 'Quit', hint: 'esc or q any time' },
+  { id: 'paste', label: 'paste an API token', hint: 'from console.anthropic.com/settings/keys' },
+  { id: 'oauth', label: 'run `claude setup-token` (browser OAuth)', hint: 'uses your existing subscription' },
+  { id: 'quit',  label: 'quit',                                     hint: 'esc or q any time' },
 ];
 
 export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
+  const t = getTheme();
   const { exit } = useApp();
   const [phase, setPhase] = useState<Phase>('pick');
   const [cursor, setCursor] = useState(0);
@@ -80,77 +82,69 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
   }
 
   return (
-    <Box flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1}>
-      <Box marginBottom={1}>
-        <Text bold color="cyan">Welcome to forge</Text>
-        <Text dimColor>   (alias: </Text>
-        <Text italic color="magenta">map</Text>
-        <Text dimColor>)</Text>
-      </Box>
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
+      <Text color={t.accent} bold>forge -- sign in</Text>
 
       {phase === 'pick' && (
         <>
-          <Text dimColor>you are not signed in. choose a method:</Text>
+          <Text color={t.muted}>no token configured. pick a method:</Text>
           <Box flexDirection="column" marginTop={1}>
             {OPTIONS.map((opt, i) => {
               const active = i === cursor;
               return (
                 <Box key={opt.id}>
-                  <Text color={active ? 'cyan' : undefined} bold={active}>
-                    {active ? '> ' : '  '}{opt.label}
+                  <Text color={active ? t.accent : t.muted}>
+                    {active ? '> ' : '  '}
                   </Text>
-                  <Text dimColor>  {opt.hint}</Text>
+                  <Text color={active ? t.accent : t.text} bold={active}>
+                    {opt.label}
+                  </Text>
+                  <Text color={t.muted}>  {opt.hint}</Text>
                 </Box>
               );
             })}
           </Box>
           <Box marginTop={1}>
-            <Text dimColor>up/dn or j/k to move · enter to select · q to quit</Text>
+            <Text color={t.muted}>up/dn or j/k move, enter select, q quit</Text>
           </Box>
         </>
       )}
 
       {phase === 'input' && (
-        <>
-          <Text dimColor>paste the token that starts with </Text>
-          <Text bold>{TOKEN_PREFIX}</Text>
-          <Text dimColor>, then press Enter</Text>
-          <Text dimColor>target: <Text italic>{primaryTokenPath()}</Text> (hidden, chmod 600)</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={t.muted}>
+            paste token starting with {TOKEN_PREFIX}, then press enter
+          </Text>
+          <Text color={t.muted}>
+            target: {primaryTokenPath()} (hidden, chmod 600)
+          </Text>
           <Box marginTop={1}>
-            <Text color="green" bold>{'> '}</Text>
-            <TextInput
+            <Text color={t.accent}>{'> '}</Text>
+            <SimpleTextInput
               value={token}
               onChange={setToken}
               onSubmit={submit}
-              mask="•"
+              mask="*"
               placeholder={`${TOKEN_PREFIX}...`}
             />
           </Box>
-          <Box marginTop={1}>
-            <Text dimColor>input is masked · esc to cancel</Text>
-          </Box>
-        </>
+          <Text color={t.muted}>input is masked, esc to cancel</Text>
+        </Box>
       )}
 
-      {phase === 'saving' && <Text color="yellow">● saving token...</Text>}
+      {phase === 'saving' && <Text color={t.warn}>.. saving token</Text>}
 
       {phase === 'done' && (
-        <Box flexDirection="column">
-          <Box>
-            <Text color="green">v </Text>
-            <Text>token saved</Text>
-          </Box>
-          <Text dimColor>{savedPath}</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={t.success}>ok token saved</Text>
+          <Text color={t.muted}>{savedPath}</Text>
         </Box>
       )}
 
       {phase === 'error' && (
-        <Box flexDirection="column">
-          <Box>
-            <Text color="red">x </Text>
-            <Text>{message}</Text>
-          </Box>
-          <Text dimColor>press enter/esc to go back</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={t.error}>!! {message}</Text>
+          <Text color={t.muted}>press enter/esc to go back</Text>
         </Box>
       )}
     </Box>

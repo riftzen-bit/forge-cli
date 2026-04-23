@@ -1,81 +1,66 @@
 export type ThemeName = 'dark' | 'light';
 
 export type Theme = {
-  claude: string;
-  claudeShimmer: string;
-  clawdBody: string;
-  clawdBackground: string;
-  permission: string;
-  planMode: string;
-  bashBorder: string;
-  autoAccept: string;
-  fastMode: string;
-  promptBorder: string;
-  subtle: string;
-  suggestion: string;
-  success: string;
+  accent: string;
+  accentDim: string;
+  warn: string;
   error: string;
-  warning: string;
+  success: string;
+  info: string;
+  muted: string;
   text: string;
-  inverseText: string;
-  userMessageBackground: string;
-  bashMessageBackground: string;
-  diffAdded: string;
-  diffRemoved: string;
-  diffAddedDimmed: string;
-  diffRemovedDimmed: string;
+  inverse: string;
+  selection: string;
+  borderIdle: string;
+  borderActive: string;
+  diffAdd: string;
+  diffDel: string;
+  diffCtx: string;
+  userBg: string;
+  planMode: string;
+  toolTag: string;
 };
 
 const darkTheme: Theme = {
-  claude: 'rgb(215,119,87)',
-  claudeShimmer: 'rgb(235,159,127)',
-  clawdBody: 'rgb(215,119,87)',
-  clawdBackground: 'rgb(0,0,0)',
-  permission: 'rgb(177,185,249)',
-  planMode: 'rgb(72,150,140)',
-  bashBorder: 'rgb(253,93,177)',
-  autoAccept: 'rgb(175,135,255)',
-  fastMode: 'rgb(255,120,20)',
-  promptBorder: 'rgb(136,136,136)',
-  subtle: 'rgb(140,140,140)',
-  suggestion: 'rgb(177,185,249)',
-  success: 'rgb(78,186,101)',
-  error: 'rgb(255,107,128)',
-  warning: 'rgb(255,193,7)',
-  text: 'rgb(255,255,255)',
-  inverseText: 'rgb(0,0,0)',
-  userMessageBackground: 'rgb(55,55,55)',
-  bashMessageBackground: 'rgb(65,60,65)',
-  diffAdded: 'rgb(34,92,43)',
-  diffRemoved: 'rgb(122,41,54)',
-  diffAddedDimmed: 'rgb(71,88,74)',
-  diffRemovedDimmed: 'rgb(105,72,77)',
+  accent:       '#5fd7af',
+  accentDim:    '#3fa37a',
+  warn:         '#e6b450',
+  error:        '#f07178',
+  success:      '#a0e7a0',
+  info:         '#7aa2f7',
+  muted:        '#707070',
+  text:         '#e6e6e6',
+  inverse:      '#0a0a0a',
+  selection:    '#2a2a2a',
+  borderIdle:   '#3a3a3a',
+  borderActive: '#5fd7af',
+  diffAdd:      '#87d787',
+  diffDel:      '#d78787',
+  diffCtx:      '#8a8a8a',
+  userBg:       '#2e3440',
+  planMode:     '#b48ead',
+  toolTag:      '#e6b450',
 };
 
 const lightTheme: Theme = {
-  claude: 'rgb(215,119,87)',
-  claudeShimmer: 'rgb(245,149,117)',
-  clawdBody: 'rgb(215,119,87)',
-  clawdBackground: 'rgb(245,245,245)',
-  permission: 'rgb(87,105,247)',
-  planMode: 'rgb(0,102,102)',
-  bashBorder: 'rgb(255,0,135)',
-  autoAccept: 'rgb(135,0,255)',
-  fastMode: 'rgb(234,88,12)',
-  promptBorder: 'rgb(153,153,153)',
-  subtle: 'rgb(120,120,120)',
-  suggestion: 'rgb(87,105,247)',
-  success: 'rgb(44,122,57)',
-  error: 'rgb(171,43,63)',
-  warning: 'rgb(150,108,30)',
-  text: 'rgb(0,0,0)',
-  inverseText: 'rgb(255,255,255)',
-  userMessageBackground: 'rgb(235,235,235)',
-  bashMessageBackground: 'rgb(240,232,240)',
-  diffAdded: 'rgb(105,219,124)',
-  diffRemoved: 'rgb(255,168,180)',
-  diffAddedDimmed: 'rgb(199,225,203)',
-  diffRemovedDimmed: 'rgb(253,210,216)',
+  accent:       '#2a7f5f',
+  accentDim:    '#4a9f7f',
+  warn:         '#8a6d00',
+  error:        '#a4001f',
+  success:      '#1f7a1f',
+  info:         '#0042a0',
+  muted:        '#707070',
+  text:         '#1a1a1a',
+  inverse:      '#ffffff',
+  selection:    '#e0e0e0',
+  borderIdle:   '#b8b8b8',
+  borderActive: '#2a7f5f',
+  diffAdd:      '#1f7a1f',
+  diffDel:      '#a4001f',
+  diffCtx:      '#707070',
+  userBg:       '#e0e4ec',
+  planMode:     '#7a3f8f',
+  toolTag:      '#8a6d00',
 };
 
 let current: Theme = darkTheme;

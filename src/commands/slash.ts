@@ -40,7 +40,7 @@ export async function handleSlash(line: string, ctx: SlashCtx): Promise<string> 
     case 'parallel': {
       const tasks = parseParallelTasks(rest);
       if (tasks.length < 2) {
-        return 'need ≥2 tasks separated by "||". e.g. /parallel read src/a.ts || read src/b.ts';
+        return 'need >=2 tasks separated by "||". e.g. /parallel read src/a.ts || read src/b.ts';
       }
       ctx.runParallel(tasks);
       return '';

@@ -9,8 +9,7 @@
   },
   "files": [
     "bin",
-    "dist",
-    "systemprompt.txt"
+    "dist"
   ],
   "scripts": {
     "dev": "bun run src/cli.tsx",
