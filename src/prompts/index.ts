@@ -23,6 +23,7 @@ import {
   CORE_IDENTITY,
   SECURITY_HEADER,
   WORKING_DIRECTORY_OWNERSHIP,
+  DESIGN_TASTE,
   THINK_FIRST,
   SYSTEM_NOTES,
   TOOL_EXECUTION_DENIED,
@@ -75,6 +76,8 @@ const BASE_PROMPT = [
   FOLLOW_AGENTS_MD,
   '',
   ALL_STYLE,
+  '',
+  DESIGN_TASTE,
 ].join('\n');
 
 // Legacy alias — callers importing SYSTEM_PROMPT get the base (plan mode

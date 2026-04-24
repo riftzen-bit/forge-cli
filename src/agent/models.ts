@@ -44,6 +44,10 @@ export const MODELS: ModelEntry[] = [
   { id: 'gpt-4o-mini', label: 'GPT-4o mini', provider: 'openai' },
   { id: 'o1',          label: 'o1',          provider: 'openai' },
   { id: 'o3-mini',     label: 'o3-mini',     provider: 'openai' },
+
+  { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',   provider: 'gemini', contextWindow: MILLION_CTX },
+  { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash', provider: 'gemini', contextWindow: MILLION_CTX },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Lite',  provider: 'gemini', contextWindow: MILLION_CTX },
 ];
 
 export const DEFAULT_MODEL = 'claude-opus-4-7';

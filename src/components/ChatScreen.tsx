@@ -316,7 +316,16 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
       return;
     }
     if (key.ctrl && ch === 'o') {
+      // Toggle verbose AND repaint terminal: Ink's <Static> writes each item
+      // to scrollback exactly once, so previously-emitted MessageRows freeze
+      // at their old size when verbose flips. Without a repaint, expanded
+      // rows stay tall (or collapsed rows stay short), leaving dead vertical
+      // space between the static area and the dynamic input. Clear the
+      // terminal + scrollback, bump renderEpoch to remount Static, and the
+      // whole transcript redraws at the new verbosity.
       setVerbose((v) => !v);
+      process.stdout.write('\x1Bc\x1B[3J');
+      setRenderEpoch((n) => n + 1);
       return;
     }
     // Esc while busy = cancel running agent turn. Takes precedence over

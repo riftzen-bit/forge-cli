@@ -7,6 +7,7 @@ export type ProviderId =
   | 'kimi'
   | 'nvidia'
   | 'openai'
+  | 'gemini'
   | 'custom';
 
 export type Provider = {
@@ -93,6 +94,15 @@ export const PROVIDERS: Provider[] = [
     nativeAnthropic: false,
     hint: 'OpenAI ChatCompletions. Needs LiteLLM (or similar) Anthropic-compat proxy.',
     notes: 'litellm --model openai/gpt-4o --api_key $OPENAI_API_KEY. Default port 4000.',
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini (via proxy)',
+    baseURL: 'http://localhost:4000',
+    defaultModel: 'gemini-2.5-pro',
+    nativeAnthropic: false,
+    hint: 'Google Gemini via LiteLLM Anthropic-compat proxy. Use a Google AI Studio key.',
+    notes: 'pip install litellm. Then: GEMINI_API_KEY=<key> litellm --model gemini/gemini-2.5-pro --port 4000. Models: gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite. Native Google-account OAuth login (Gemini-CLI style) is not yet implemented in Forge — see /doctor or roadmap.',
   },
   {
     id: 'custom',
