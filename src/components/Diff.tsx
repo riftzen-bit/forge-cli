@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../ui/theme.js';
 
-type Props = { oldText: string; newText: string; contextLines?: number; maxLines?: number };
+type Props = { oldText: string; newText: string; contextLines?: number; maxLines?: number; verbose?: boolean };
 
 type DLine =
   | { kind: 'ctx'; text: string; oldNo?: number; newNo?: number }
@@ -28,7 +28,7 @@ export function computeDiffStats(oldText: string, newText: string): { adds: numb
   return { adds, dels };
 }
 
-export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Props) {
+export function Diff({ oldText, newText, contextLines = 3, maxLines = 24, verbose = false }: Props) {
   const t = getTheme();
   const lines = useMemo(
     () => computeDiff(oldText, newText, contextLines),
@@ -36,8 +36,9 @@ export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Prop
   );
   if (lines.length === 0) return null;
 
-  const truncated = lines.length > maxLines;
-  const shown = truncated ? lines.slice(0, maxLines) : lines;
+  const cap = verbose ? Number.POSITIVE_INFINITY : maxLines;
+  const truncated = lines.length > cap;
+  const shown = truncated ? lines.slice(0, cap) : lines;
   const hidden = lines.length - shown.length;
 
   const maxNo = Math.max(
@@ -55,7 +56,7 @@ export function Diff({ oldText, newText, contextLines = 3, maxLines = 24 }: Prop
     <Box flexDirection="column" paddingLeft={4}>
       {shown.map((l, i) => renderLine(l, i, numW, t))}
       {truncated && (
-        <Text color={t.muted}>{`  ${' '.repeat(numW)}  ... ${hidden} more line${hidden === 1 ? '' : 's'}`}</Text>
+        <Text color={t.muted}>{`  ${' '.repeat(numW)}  ... ${hidden} more line${hidden === 1 ? '' : 's'} (ctrl+o to expand)`}</Text>
       )}
     </Box>
   );

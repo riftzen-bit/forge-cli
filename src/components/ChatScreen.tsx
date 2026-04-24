@@ -1,5 +1,15 @@
+// Main chat UI. Most business logic has been extracted to hooks under
+// `./chat/`; this file is responsible for:
+//   - owning top-level UI state (input, history, pickers, busy)
+//   - wiring the extracted hooks together via a CommandCtx
+//   - rendering the Ink layout
+//
+// Keep this file thin. If a block of logic needs more than a few lines,
+// move it into the corresponding hook under ./chat/.
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput } from 'ink';
+
 import { SimpleTextInput } from './SimpleTextInput.js';
 import { Banner } from './Banner.js';
 import { Tips } from './Tips.js';
@@ -9,38 +19,42 @@ import { CommandPalette } from './CommandPalette.js';
 import { ModelSelector } from './ModelSelector.js';
 import { EffortSelector } from './EffortSelector.js';
 import { ResumeSelector } from './ResumeSelector.js';
+import { ProviderSelector } from './ProviderSelector.js';
 import { StatusBar } from './StatusBar.js';
-import type { ChatMessage } from './MessageList.js';
-import { AgentClient, type ToolStartEvent, type ToolResultEvent } from '../agent/client.js';
-import { AgentPool } from '../agent/pool.js';
-import { runSubagent } from '../agent/subagent.js';
-import { FileCoordinator } from '../agent/fileLocks.js';
-import { createSpawnServer } from '../agent/spawnServer.js';
-import { TodoStore, formatTodoSummary, type Todo } from '../agent/todos.js';
 import { TodoList } from './TodoList.js';
-import { handleSlash } from '../commands/slash.js';
-import { CONTEXT_LIMIT } from '../agent/contextBudget.js';
+import { PermissionPrompt, type PermissionChoice } from './PermissionPrompt.js';
+import type { ChatMessage } from './MessageList.js';
+
+import { ActiveToolsPanel } from './chat/ActiveToolsPanel.js';
+import { SubagentPanel } from './chat/SubagentPanel.js';
+import { StreamingPreview } from './chat/StreamingPreview.js';
+import { useStreamState } from './chat/useStreamState.js';
+import { useActiveTools } from './chat/useActiveTools.js';
+import { useSessionStats } from './chat/useSessionStats.js';
+import { useChatClient } from './chat/useChatClient.js';
+import { useChatCommands } from './chat/useChatCommands.js';
+import { makeSubmit } from './chat/useChatSubmit.js';
+import type { PickerMode, StaticItem } from './chat/types.js';
+import type { CommandCtx } from './chat/commands/ctx.js';
+
+import { TodoStore, type Todo } from '../agent/todos.js';
 import { filterCommands, expand } from '../commands/registry.js';
-import { labelFor, resolveModel } from '../agent/models.js';
+import { resolveModel } from '../agent/models.js';
 import { DEFAULT_EFFORT, type Effort } from '../agent/effort.js';
-import { saveSettings } from '../config/settings.js';
-import type { SessionSummary } from '../session/store.js';
 import type { AuthStatus } from '../auth/status.js';
-import type { Settings } from '../config/settings.js';
+import type { Settings, PermissionMode } from '../config/settings.js';
+import { DEFAULT_PERMISSION_MODE, nextPermissionMode, saveSettings } from '../config/settings.js';
+import {
+  appendProjectAllow,
+  loadProjectPermissions,
+  matchPatternFor,
+  projectRulesAsPermissionRules,
+} from '../config/projectPermissions.js';
 import { getTheme } from '../ui/theme.js';
-import { displayName, prettyArgs } from './toolFormat.js';
-
-type PickerMode = 'none' | 'model' | 'effort' | 'resume';
-
-type ActiveTool = {
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-  startedAt: number;
-  tag?: string;
-};
-
-const THINKING_FLUSH_MS = 80;
+import { DEFAULT_PROVIDER } from '../agent/providers.js';
+import { listProviderKeys } from '../config/tokenStore.js';
+import { InputHistory } from '../agent/inputHistory.js';
+import type { PermissionRequest } from '../agent/client.js';
 
 type Props = {
   model: string;
@@ -55,6 +69,8 @@ type Props = {
 export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit }: Props) {
   const { exit } = useApp();
   const t = getTheme();
+
+  // --- UI state ---
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -63,91 +79,182 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   const [activeModel, setActiveModel] = useState(resolveModel(model));
   const [activeEffort, setActiveEffort] = useState<Effort>(effort ?? DEFAULT_EFFORT);
   const [picker, setPicker] = useState<PickerMode>('none');
-  const [thinking, setThinking] = useState('');
   const [verbose, setVerbose] = useState(false);
-  const [activeTools, setActiveTools] = useState<ActiveTool[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
-  const [planMode, setPlanMode] = useState(false);
-  const [tokens, setTokens] = useState(0);
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(
+    settings?.permissionMode ?? DEFAULT_PERMISSION_MODE,
+  );
+  const [pendingPermission, setPendingPermission] = useState<
+    | (PermissionRequest & { resolve: (c: PermissionChoice) => void })
+    | undefined
+  >(undefined);
   const [renderEpoch, setRenderEpoch] = useState(0);
   const [queue, setQueue] = useState<string[]>([]);
+  const [activeProvider, setActiveProvider] = useState<string>(
+    settings?.activeProvider ?? DEFAULT_PROVIDER,
+  );
+  const [providerKeys, setProviderKeys] = useState<Set<string>>(new Set());
 
-  const thinkingAccumRef = useRef('');
-  const thinkingPendingRef = useRef(false);
-  const activeToolsMapRef = useRef<Map<string, ActiveTool>>(new Map());
-  const subStatsRef = useRef<Map<string, { count: number; startedAt: number }>>(new Map());
+  // --- Refs ---
+  const busyRef = useRef(false);
+  const prevBusyRef = useRef(false);
+  const lastUserMsgRef = useRef<string>('');
+  const inputHistoryRef = useRef<InputHistory>(new InputHistory(settings?.inputHistory?.max ?? 500));
   const queueRef = useRef<string[]>([]);
   const submitRef = useRef<(text: string) => Promise<void>>(async () => {});
-  const prevBusyRef = useRef(false);
-  const busyRef = useRef(false);
-  const spawnHandlersRef = useRef<{
-    onToolStart: (ev: ToolStartEvent, tag?: string) => void;
-    onToolResult: (r: ToolResultEvent, tag?: string) => void;
-    appendHistory: (m: ChatMessage) => void;
-    getModel: () => string;
-    getEffort: () => Effort;
-  }>({
-    onToolStart: () => {},
-    onToolResult: () => {},
-    appendHistory: () => {},
-    getModel: () => model,
-    getEffort: () => effort ?? DEFAULT_EFFORT,
-  });
 
-  const [coordinator] = useState(() => new FileCoordinator());
-  const [pool] = useState(() => new AgentPool(coordinator));
-  const [client] = useState(() => {
-    const spawn = createSpawnServer({
-      coordinator,
-      getModel: () => spawnHandlersRef.current.getModel(),
-      getEffort: () => spawnHandlersRef.current.getEffort(),
-      onEvent: (tag, ev) => {
-        if (ev.kind === 'toolStart') {
-          spawnHandlersRef.current.onToolStart(
-            { id: ev.id, name: ev.tool, input: ev.input },
-            tag,
-          );
-        } else if (ev.kind === 'toolResult') {
-          spawnHandlersRef.current.onToolResult(
-            { id: ev.id, ok: ev.ok, ms: ev.ms, preview: ev.preview, lines: ev.lines },
-            tag,
-          );
-        } else if (ev.kind === 'thinking') {
-          handleThinking(ev.delta);
-        } else if (ev.kind === 'done') {
-          const s = subStatsRef.current.get(tag);
-          subStatsRef.current.delete(tag);
-          const secs = s ? ((Date.now() - s.startedAt) / 1000).toFixed(1) : '?';
-          const n = s?.count ?? 0;
-          const chars = ev.reply.length;
-          spawnHandlersRef.current.appendHistory({
-            role: 'system',
-            text: `[${tag}] done  ${n} tool${n === 1 ? '' : 's'}  ${secs}s  ${chars} chars`,
-          });
-        } else if (ev.kind === 'error') {
-          subStatsRef.current.delete(tag);
-          spawnHandlersRef.current.appendHistory({
-            role: 'error',
-            text: `[${tag}] ${ev.message}`,
-          });
-        }
-      },
-    });
-    return new AgentClient({
-      model,
-      effort: effort ?? DEFAULT_EFFORT,
-      locks: coordinator,
-      permissionRules: settings?.permissionRules,
-      hooks: settings?.hooks,
-      mcpServers: { ...(settings?.mcpServers ?? {}), ...spawn.servers },
-      extraAllowedTools: spawn.allowedTools,
-    });
+  // --- Helpers ---
+  const appendHistory = (m: ChatMessage) => setHistory((h) => [...h, m]);
+  async function refreshProviderKeys(): Promise<void> {
+    try {
+      const list = await listProviderKeys();
+      setProviderKeys(new Set(list));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // --- Hooks ---
+  const stats = useSessionStats(activeModel);
+  const stream = useStreamState(busy, appendHistory);
+  const tools = useActiveTools({
+    cwd,
+    flushThinking: stream.flushThinking,
+    appendHistory,
+    sessionStatsRef: stats.sessionStatsRef,
   });
   const [todoStore] = useState(() => new TodoStore());
+  const chatClient = useChatClient({
+    model,
+    effort,
+    settings,
+    handleThinking: stream.handleThinking,
+    pushSubDelta: stream.pushSubDelta,
+    removeSubPreview: stream.removeSubPreview,
+    subStatsRef: tools.subStatsRef,
+  });
 
+  // --- Busy lifecycle ---
+  // beginBusy/endBusy are kept here because they drive UI-scoped busy state
+  // plus coordinate resets across useStreamState and useActiveTools.
+  const beginBusy = () => {
+    busyRef.current = true;
+    setBusy(true);
+    setBusyStartedAt(Date.now());
+    stream.resetThinking();
+  };
+  const endBusy = () => {
+    busyRef.current = false;
+    setBusy(false);
+    setBusyStartedAt(undefined);
+    stream.resetThinking();
+    tools.clearAll();
+  };
+
+  // --- Command ctx + handlers ---
+  const cmdCtx: CommandCtx = {
+    cwd,
+    settings,
+    auth,
+    onExit,
+    exit,
+    client: chatClient.client,
+    pool: chatClient.pool,
+    coordinator: chatClient.coordinator,
+    todoStore,
+    getActiveModel: () => activeModel,
+    getActiveEffort: () => activeEffort,
+    getActiveProvider: () => activeProvider,
+    getPermissionMode: () => permissionMode,
+    getTokens: () => stats.tokens,
+    setActiveModel,
+    setActiveEffort,
+    setActiveProvider,
+    setPermissionMode: setPermissionModeState,
+    setTokens: stats.setTokens,
+    setPicker,
+    setRenderEpoch,
+    setHistory,
+    appendHistory,
+    handleThinking: stream.handleThinking,
+    flushThinking: stream.flushThinking,
+    pushSubDelta: stream.pushSubDelta,
+    removeSubPreview: stream.removeSubPreview,
+    handleToolStart: tools.handleToolStart,
+    handleToolResult: tools.handleToolResult,
+    subStatsRef: tools.subStatsRef,
+    sessionStatsRef: stats.sessionStatsRef,
+    beginBusy,
+    endBusy,
+    handleTokens: stats.handleTokens,
+    providerKeys,
+    refreshProviderKeys,
+    lastUserMsgRef,
+    inputHistoryRef,
+    submitRef,
+  };
+  const commands = useChatCommands(cmdCtx);
+
+  // Refresh spawn-server handler indirection each render so the frozen
+  // client sees the latest state-bound callbacks.
+  chatClient.spawnHandlersRef.current = {
+    onToolStart: tools.handleToolStart,
+    onToolResult: tools.handleToolResult,
+    appendHistory,
+    getModel: () => activeModel,
+    getEffort: () => activeEffort,
+    getProvider: () => activeProvider,
+    getProviderConfig: () => settings?.providers?.[activeProvider] ?? {},
+  };
+
+  // --- Submit ---
+  const submit = makeSubmit({
+    cwd,
+    client: chatClient.client,
+    settings,
+    setInput,
+    setCursor,
+    setHistory,
+    setPicker,
+    setQueue,
+    busyRef,
+    queueRef,
+    lastUserMsgRef,
+    inputHistoryRef,
+    sessionStatsRef: stats.sessionStatsRef,
+    beginBusy,
+    endBusy,
+    handleThinking: stream.handleThinking,
+    handleText: stream.handleText,
+    flushThinking: stream.flushThinking,
+    flushStreaming: stream.flushStreaming,
+    resetStreaming: stream.resetStreaming,
+    handleToolStart: tools.handleToolStart,
+    handleToolResult: tools.handleToolResult,
+    handleTokens: stats.handleTokens,
+    handleUsage: stats.handleUsage,
+    todoStore,
+    commands,
+    onExit,
+    exit,
+  });
+  submitRef.current = submit;
+
+  // --- Effects ---
   useEffect(() => todoStore.subscribe(setTodos), [todoStore]);
 
   useEffect(() => {
+    if (settings?.inputHistory?.enabled !== false) {
+      void inputHistoryRef.current.load();
+    }
+  }, [settings?.inputHistory?.enabled]);
+
+  useEffect(() => {
+    void refreshProviderKeys();
+  }, []);
+
+  useEffect(() => {
+    // Force Static to re-emit its scrollback buffer after a terminal resize.
     const onResize = () => {
       setRenderEpoch((n) => n + 1);
     };
@@ -157,16 +264,38 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     };
   }, []);
 
+  // Drain the input queue when we flip from busy -> idle.
   useEffect(() => {
-    if (!busy) return;
-    const id = setInterval(() => {
-      if (thinkingPendingRef.current) {
-        setThinking(thinkingAccumRef.current);
-        thinkingPendingRef.current = false;
-      }
-    }, THINKING_FLUSH_MS);
-    return () => clearInterval(id);
+    const wasBusy = prevBusyRef.current;
+    prevBusyRef.current = busy;
+    if (wasBusy && !busy && queueRef.current.length > 0) {
+      const next = queueRef.current.shift()!;
+      setQueue([...queueRef.current]);
+      void submitRef.current(next);
+    }
   }, [busy]);
+
+  // Auto-clear Todo panel when idle and every item is done. Short delay
+  // so the user sees the completed state flash before it disappears.
+  useEffect(() => {
+    if (busy) return;
+    if (todos.length === 0) return;
+    if (!todos.every((td) => td.status === 'done')) return;
+    const timer = setTimeout(() => todoStore.clear(), 1500);
+    return () => clearTimeout(timer);
+  }, [busy, todos, todoStore]);
+
+  // One-shot mode: auto-submit the supplied text, then exit.
+  useEffect(() => {
+    if (oneShot) {
+      void (async () => {
+        await submit(oneShot);
+        onExit();
+        exit();
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const palette = useMemo(() => filterCommands(input), [input]);
   const paletteOpen = palette.length > 0 && input.startsWith('/') && picker === 'none';
@@ -176,9 +305,48 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   }, [palette.length, cursor]);
 
   useInput((ch, key) => {
+    // Permission prompt is modal — its own useInput handles arrows/enter.
+    if (pendingPermission) return;
     if (picker !== 'none') return;
+    // Shift+Tab cycles permission mode regardless of busy state, so users
+    // can flip into Plan or YOLO mid-turn (next tool call picks it up).
+    if (key.shift && key.tab) {
+      const msg = commands.cyclePermissionMode();
+      appendHistory({ role: 'system', text: msg });
+      return;
+    }
     if (key.ctrl && ch === 'o') {
       setVerbose((v) => !v);
+      return;
+    }
+    // Esc while busy = cancel running agent turn. Takes precedence over
+    // palette / input handling so users can always bail out.
+    if (key.escape && busy) {
+      chatClient.client.cancel();
+      appendHistory({ role: 'system', text: 'cancelled (esc)' });
+      return;
+    }
+    // Esc while idle with a non-empty queue = drop the queue.
+    if (key.escape && !busy && queueRef.current.length > 0) {
+      queueRef.current = [];
+      setQueue([]);
+      appendHistory({ role: 'system', text: 'queue cleared' });
+      return;
+    }
+    // Enter on empty input while idle + queue has items = drain the
+    // oldest queued item immediately. Lets user "push up" a queued msg.
+    if (key.return && !busy && input.trim() === '' && queueRef.current.length > 0) {
+      const next = queueRef.current.shift()!;
+      setQueue([...queueRef.current]);
+      void submitRef.current(next);
+      return;
+    }
+    // Enter on empty input WHILE busy + queue has items = cancel current
+    // turn and let the busy->idle drain effect immediately submit the next
+    // queued message. Matches the user mental model of "push queued up now".
+    if (key.return && busy && input.trim() === '' && queueRef.current.length > 0) {
+      chatClient.client.cancel();
+      appendHistory({ role: 'system', text: 'skipped current turn -- running queued' });
       return;
     }
     if (!paletteOpen) return;
@@ -201,363 +369,65 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     }
   });
 
-  const handleTokens = (total: number) => {
-    setTokens(total);
-  };
+  // Track pendingPermission in a ref so unmount can resolve any in-flight
+  // request with 'no' — leaving it unresolved would deadlock the SDK's
+  // canUseTool await forever.
+  const pendingPermissionRef = useRef(pendingPermission);
+  useEffect(() => {
+    pendingPermissionRef.current = pendingPermission;
+  }, [pendingPermission]);
 
-  const handleThinking = (delta: string) => {
-    thinkingAccumRef.current += delta;
-    thinkingPendingRef.current = true;
-  };
-
-  const commitActiveTools = () => {
-    setActiveTools([...activeToolsMapRef.current.values()]);
-  };
-
-  const handleToolStart = (ev: ToolStartEvent, tag?: string) => {
-    const now = Date.now();
-    activeToolsMapRef.current.set(ev.id, {
-      id: ev.id,
-      name: ev.name,
-      input: ev.input,
-      startedAt: now,
-      tag,
+  // Wire the permission requester once so the client sees state updates
+  // through the setter closure. On unmount, clear the requester AND
+  // resolve any pending Promise so the SDK doesn't hang.
+  useEffect(() => {
+    chatClient.client.setPermissionRequester((req) => {
+      return new Promise<PermissionChoice>((resolve) => {
+        setPendingPermission({ ...req, resolve });
+      });
     });
-    if (tag && !subStatsRef.current.has(tag)) {
-      subStatsRef.current.set(tag, { count: 0, startedAt: now });
-    }
-    commitActiveTools();
-  };
+    return () => {
+      chatClient.client.setPermissionRequester(undefined);
+      const p = pendingPermissionRef.current;
+      if (p) p.resolve('no');
+    };
+  }, [chatClient.client]);
 
-  const handleToolResult = (res: ToolResultEvent, tag?: string) => {
-    const at = activeToolsMapRef.current.get(res.id);
-    activeToolsMapRef.current.delete(res.id);
-    commitActiveTools();
-    if (!at) return;
-    if (tag) {
-      const s = subStatsRef.current.get(tag) ?? { count: 0, startedAt: at.startedAt };
-      s.count += 1;
-      subStatsRef.current.set(tag, s);
-      return;
-    }
-    const meta = res.lines !== undefined ? { lines: res.lines } : {};
-    setHistory((h) => [
-      ...h,
-      {
-        role: 'tool',
-        tool: at.name,
-        input: at.input,
-        text: prettyArgs(at.name, at.input, cwd, meta),
-        id: res.id,
-        status: res.ok ? 'ok' : 'err',
-        ms: res.ms,
-        output: res.preview,
-      },
-    ]);
-  };
-
-  spawnHandlersRef.current = {
-    onToolStart: handleToolStart,
-    onToolResult: handleToolResult,
-    appendHistory: (msg) => setHistory((h) => [...h, msg]),
-    getModel: () => activeModel,
-    getEffort: () => activeEffort,
-  };
-
-  const beginBusy = () => {
-    busyRef.current = true;
-    setBusy(true);
-    setBusyStartedAt(Date.now());
-    thinkingAccumRef.current = '';
-    thinkingPendingRef.current = false;
-    setThinking('');
-  };
-
-  const flushThinkingToHistory = () => {
-    if (thinkingAccumRef.current.trim()) {
-      const full = thinkingAccumRef.current.replace(/\s+/g, ' ').trim();
-      setHistory((m) => [...m, { role: 'thinking', text: full }]);
-    }
-    thinkingAccumRef.current = '';
-    thinkingPendingRef.current = false;
-  };
-
-  const endBusy = () => {
-    busyRef.current = false;
-    setBusy(false);
-    setBusyStartedAt(undefined);
-    setThinking('');
-    activeToolsMapRef.current.clear();
-    commitActiveTools();
-  };
-
-  const applyModel = async (id: string) => {
-    client.setModel(id);
-    setActiveModel(id);
-    setPicker('none');
-    setHistory((m) => [...m, { role: 'system', text: `model -> ${labelFor(id)}` }]);
+  // Load project-local permission rules and merge with global rules. Re-runs
+  // when the user accepts "Yes Allow Session" so the new rule takes effect
+  // immediately for the next tool call.
+  async function refreshProjectPermissions(): Promise<void> {
     try {
-      await saveSettings({ defaultModel: id });
-    } catch { /* best-effort */ }
-  };
-
-  const applyEffort = async (e: Effort) => {
-    client.setEffort(e);
-    setActiveEffort(e);
-    setPicker('none');
-    setHistory((m) => [...m, { role: 'system', text: `effort -> ${e}` }]);
-    try {
-      await saveSettings({ effort: e });
-    } catch { /* best-effort */ }
-  };
-
-  const runCompact = async () => {
-    setHistory((m) => [...m, { role: 'system', text: 'compacting...' }]);
-    beginBusy();
-    try {
-      await client.compact({
-        onTokens: handleTokens,
-        onCompactRun: (before, after) => {
-          setHistory((m) => [
-            ...m,
-            { role: 'system', text: `compacted ${before.toLocaleString()} -> ${after.toLocaleString()} tok` },
-          ]);
-        },
-      });
-      setTokens(client.getTokenTotal());
-    } catch (err) {
-      setHistory((m) => [...m, { role: 'error', text: (err as Error).message }]);
-    } finally {
-      endBusy();
+      const proj = await loadProjectPermissions(cwd);
+      const projRules = projectRulesAsPermissionRules(proj);
+      const merged = [...(settings?.permissionRules ?? []), ...projRules];
+      chatClient.client.setPermissionRules(merged);
+    } catch {
+      /* best-effort */
     }
-  };
-
-  const togglePlan = (): string => {
-    const next = !planMode;
-    setPlanMode(next);
-    client.setPlanMode(next);
-    return next ? 'plan mode on -- no edits will execute' : 'plan mode off';
-  };
-
-  const runTask = async (task: string) => {
-    setHistory((m) => [...m, { role: 'system', text: `spawning subagent: ${task}` }]);
-    beginBusy();
-    try {
-      const reply = await runSubagent(task, { model: activeModel, effort: activeEffort, locks: coordinator }, {
-        onThinking: handleThinking,
-        onToolStart: (ev) => handleToolStart(ev, 'sub'),
-        onToolResult: (r) => handleToolResult(r, 'sub'),
-      });
-      flushThinkingToHistory();
-      setHistory((m) => [...m, { role: 'assistant', text: `[sub] ${reply}` }]);
-    } catch (err) {
-      setHistory((m) => [...m, { role: 'error', text: (err as Error).message }]);
-    } finally {
-      endBusy();
-    }
-  };
-
-  const handleTodo = (args: string): string => {
-    const [sub, ...rest] = args.trim().split(/\s+/);
-    const tail = rest.join(' ').trim();
-    switch (sub) {
-      case '':
-      case 'list':
-        return formatTodoSummary(todoStore.list());
-      case 'add': {
-        if (!tail) return 'usage: /todo add <text>';
-        const td = todoStore.add(tail);
-        return `added #${td.id}: ${td.text}`;
-      }
-      case 'done':
-      case 'doing':
-      case 'pending': {
-        const id = Number(tail);
-        if (!Number.isFinite(id)) return `usage: /todo ${sub} <id>`;
-        const ok = todoStore.setStatus(id, sub as 'done' | 'doing' | 'pending');
-        return ok ? `#${id} -> ${sub}` : `no todo #${id}`;
-      }
-      case 'rm': {
-        const id = Number(tail);
-        if (!Number.isFinite(id)) return 'usage: /todo rm <id>';
-        return todoStore.remove(id) ? `removed #${id}` : `no todo #${id}`;
-      }
-      case 'clear':
-        todoStore.clear();
-        return 'todos cleared';
-      default:
-        return `unknown todo op: ${sub}`;
-    }
-  };
-
-  const runParallel = async (tasks: string[]) => {
-    setHistory((m) => [
-      ...m,
-      { role: 'system', text: `running ${tasks.length} agents concurrently` },
-      ...tasks.map((td, i) => ({ role: 'user' as const, text: `[A${i + 1}] ${td}` })),
-    ]);
-    beginBusy();
-
-    try {
-      await pool.runParallel(
-        tasks,
-        { model: activeModel, effort: activeEffort },
-        (_i, tag, ev) => {
-          if (ev.kind === 'toolStart') {
-            handleToolStart({ id: ev.id, name: ev.tool, input: ev.input }, tag);
-          } else if (ev.kind === 'toolResult') {
-            handleToolResult({ id: ev.id, ok: ev.ok, ms: ev.ms, preview: ev.preview, lines: ev.lines }, tag);
-          } else if (ev.kind === 'done') {
-            const s = subStatsRef.current.get(tag);
-            subStatsRef.current.delete(tag);
-            const secs = s ? ((Date.now() - s.startedAt) / 1000).toFixed(1) : '?';
-            const n = s?.count ?? 0;
-            const firstLine = ev.reply.split(/\r?\n/, 1)[0] ?? '';
-            const digest = firstLine.length > 140 ? firstLine.slice(0, 137) + '...' : firstLine;
-            setHistory((m) => [
-              ...m,
-              { role: 'system', text: `[${tag}] done  ${n} tool${n === 1 ? '' : 's'}  ${secs}s` },
-              { role: 'assistant', text: `[${tag}] ${digest}` },
-            ]);
-          } else if (ev.kind === 'error') {
-            subStatsRef.current.delete(tag);
-            setHistory((m) => [...m, { role: 'error', text: `[${tag}] ${ev.message}` }]);
-          } else if (ev.kind === 'thinking') {
-            handleThinking(ev.delta);
-          }
-        },
-      );
-      flushThinkingToHistory();
-    } finally {
-      endBusy();
-    }
-  };
-
-  const applyResume = (s: SessionSummary) => {
-    client.queueResume(s.id);
-    setPicker('none');
-    setHistory((m) => [
-      ...m,
-      { role: 'system', text: `resuming ${s.id.slice(0, 8)} -- next message continues it` },
-    ]);
-  };
-
-  const submit = async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    setInput('');
-    setCursor(0);
-
-    if (busyRef.current) {
-      queueRef.current.push(trimmed);
-      setQueue([...queueRef.current]);
-      return;
-    }
-
-    if (trimmed.startsWith('/')) {
-      const result = await handleSlash(trimmed, {
-        onExit: () => { onExit(); exit(); },
-        openModelPicker: () => setPicker('model'),
-        openEffortPicker: () => setPicker('effort'),
-        openResumePicker: () => setPicker('resume'),
-        runParallel: (tasks) => { void runParallel(tasks); },
-        togglePlan,
-        runTask: (td) => { void runTask(td); },
-        todo: handleTodo,
-        compact: () => { void runCompact(); },
-      });
-      if (result) setHistory((m) => [...m, { role: 'system', text: result }]);
-      return;
-    }
-
-    setHistory((m) => [...m, { role: 'user', text: trimmed }]);
-    beginBusy();
-
-    try {
-      const reply = await client.send(trimmed, {
-        onThinking: handleThinking,
-        onToolStart: (ev) => handleToolStart(ev),
-        onToolResult: (r) => handleToolResult(r),
-        onTokens: handleTokens,
-        onCompactWarn: (total) => {
-          const pct = Math.round((total / CONTEXT_LIMIT) * 100);
-          setHistory((m) => [
-            ...m,
-            { role: 'system', text: `context at ${pct}% (${total.toLocaleString()} tok), auto-compact at 180k` },
-          ]);
-        },
-        onCompactRun: (before, after) => {
-          setHistory((m) => [
-            ...m,
-            { role: 'system', text: `auto-compacted ${before.toLocaleString()} -> ${after.toLocaleString()} tok` },
-          ]);
-        },
-      });
-      flushThinkingToHistory();
-      setHistory((m) => [...m, { role: 'assistant', text: reply }]);
-    } catch (err) {
-      setHistory((m) => [...m, { role: 'error', text: (err as Error).message }]);
-    } finally {
-      endBusy();
-    }
-  };
-
-  submitRef.current = submit;
-
+  }
   useEffect(() => {
-    const wasBusy = prevBusyRef.current;
-    prevBusyRef.current = busy;
-    if (wasBusy && !busy && queueRef.current.length > 0) {
-      const next = queueRef.current.shift()!;
-      setQueue([...queueRef.current]);
-      void submitRef.current(next);
-    }
-  }, [busy]);
-
-  useEffect(() => {
-    if (oneShot) {
-      void (async () => {
-        await submit(oneShot);
-        onExit();
-        exit();
-      })();
-    }
+    void refreshProjectPermissions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (picker === 'model') {
-    return (
-      <ModelSelector
-        current={activeModel}
-        onSelect={(id) => void applyModel(id)}
-        onCancel={() => setPicker('none')}
-      />
-    );
-  }
-  if (picker === 'effort') {
-    return (
-      <EffortSelector
-        current={activeEffort}
-        onSelect={(e) => void applyEffort(e)}
-        onCancel={() => setPicker('none')}
-      />
-    );
-  }
-  if (picker === 'resume') {
-    return (
-      <ResumeSelector
-        onSelect={applyResume}
-        onCancel={() => setPicker('none')}
-      />
-    );
-  }
+  // Keep the client's permissionMode in sync with React state so the
+  // SDK options flush each turn. setPermissionMode on the client is
+  // a plain setter so this is cheap.
+  useEffect(() => {
+    chatClient.client.setPermissionMode(permissionMode);
+  }, [chatClient.client, permissionMode]);
 
-  const promptColor = busy ? t.muted : planMode ? t.planMode : t.accent;
-
-  type StaticItem =
-    | { kind: 'banner'; id: string }
-    | { kind: 'tips'; id: string }
-    | { kind: 'msg'; id: string; message: ChatMessage };
+  // --- Render ---
+  const modeBorderColor =
+    permissionMode === 'plan'
+      ? t.modePlan
+      : permissionMode === 'yolo'
+        ? t.modeYolo
+        : permissionMode === 'autoAccept'
+          ? t.modeAutoAccept
+          : t.accent;
+  const promptColor = busy ? t.muted : modeBorderColor;
   const staticItems: StaticItem[] = [
     { kind: 'banner', id: 'banner' },
     { kind: 'tips', id: 'tips' },
@@ -573,156 +443,145 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
           return <MessageRow key={item.id} message={item.message} verbose={verbose} />;
         }}
       </Static>
-      <Box flexDirection="column">
-        {activeTools.length > 0 && (
-          <ActiveToolsPanel tools={activeTools} cwd={cwd} verbose={verbose} />
-        )}
-        {busy && (
-          <ThinkingLine text={thinking} verbose={verbose} startedAt={busyStartedAt} />
-        )}
-        <TodoList todos={todos} />
-        {queue.length > 0 && (
-          <Box flexDirection="column" paddingX={1}>
-            <Text color={t.muted}>queued ({queue.length}) -- sends when agent idles</Text>
-            {queue.map((q, i) => (
-              <Text key={i} color={t.muted} wrap="truncate-end">  {i + 1}. {q}</Text>
-            ))}
-          </Box>
-        )}
-        <Box
-          borderStyle="round"
-          borderColor={promptColor}
-          paddingX={1}
-        >
-          <Text color={promptColor} bold>{busy ? '.' : '>'} </Text>
-          <SimpleTextInput
-            value={input}
-            onChange={setInput}
-            onSubmit={submit}
-            placeholder={busy ? 'type to queue -- sends when ready' : 'ask forge to build, edit, or explain'}
-          />
-        </Box>
-        {paletteOpen && <CommandPalette commands={palette} cursor={cursor} />}
-        <Box paddingX={1}>
-          <StatusBar
-            model={activeModel}
-            effort={activeEffort}
-            auth={auth}
-            cwd={cwd}
-            planMode={planMode}
-            tokens={tokens}
-            tokenLimit={CONTEXT_LIMIT}
-            template={settings?.statusLine}
-          />
-        </Box>
-        <Box paddingX={1}>
-          <Text color={t.muted} wrap="truncate-end">
-            enter send  /  commands  ctrl+o details{verbose ? '*' : ''}  esc cancel  ctrl+c exit
-          </Text>
-        </Box>
-      </Box>
-    </Box>
-  );
-}
 
-const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
-
-function useTick(ms: number) {
-  const [frame, setFrame] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => {
-      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-      setNow(Date.now());
-    }, ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return { frame, now };
-}
-
-const COMPACT_VISIBLE = 3;
-
-function ActiveToolRow({
-  tool,
-  elapsed,
-  spinnerFrame,
-  cwd,
-  showSpinner,
-}: {
-  tool: ActiveTool;
-  elapsed: string;
-  spinnerFrame: string;
-  cwd: string;
-  showSpinner: boolean;
-}) {
-  const t = getTheme();
-  const name = displayName(tool.name);
-  const args = prettyArgs(tool.name, tool.input, cwd);
-  const prefix = tool.tag ? `[${tool.tag}] ` : '';
-  return (
-    <Box>
-      <Text wrap="truncate-end">
-        {showSpinner ? (
-          <Text color={t.warn}>{spinnerFrame} </Text>
-        ) : (
-          <Text color={t.muted}>  </Text>
-        )}
-        <Text color={t.muted}>{prefix}</Text>
-        <Text color={t.toolTag} bold>{name}</Text>
-        <Text color={t.text}>({args})</Text>
-        <Text color={t.muted}>  {elapsed}s</Text>
-      </Text>
-    </Box>
-  );
-}
-
-function ActiveToolsPanel({
-  tools,
-  cwd,
-  verbose,
-}: {
-  tools: ActiveTool[];
-  cwd: string;
-  verbose: boolean;
-}) {
-  const t = getTheme();
-  const { frame, now } = useTick(160);
-  const spinner = SPINNER_FRAMES[frame] ?? '';
-
-  if (verbose) {
-    return (
-      <Box flexDirection="column">
-        {tools.map((tool, i) => (
-          <ActiveToolRow
-            key={tool.id}
-            tool={tool}
-            elapsed={((now - tool.startedAt) / 1000).toFixed(1)}
-            spinnerFrame={spinner}
-            cwd={cwd}
-            showSpinner={i === 0}
-          />
-        ))}
-      </Box>
-    );
-  }
-
-  const visible = tools.slice(-COMPACT_VISIBLE);
-  const hidden = tools.length - visible.length;
-  return (
-    <Box flexDirection="column">
-      {visible.map((tool, i) => (
-        <ActiveToolRow
-          key={tool.id}
-          tool={tool}
-          elapsed={((now - tool.startedAt) / 1000).toFixed(1)}
-          spinnerFrame={spinner}
-          cwd={cwd}
-          showSpinner={i === 0}
+      {picker === 'model' && (
+        <ModelSelector
+          current={activeModel}
+          providerKeys={providerKeys}
+          activeProvider={activeProvider}
+          onSelect={(id) => void commands.applyModel(id)}
+          onCancel={() => setPicker('none')}
         />
-      ))}
-      {hidden > 0 && (
-        <Box>
-          <Text color={t.muted}>  ... +{hidden} tool use{hidden === 1 ? '' : 's'} (ctrl+o to expand)</Text>
+      )}
+      {picker === 'effort' && (
+        <EffortSelector
+          current={activeEffort}
+          onSelect={(e) => void commands.applyEffort(e)}
+          onCancel={() => setPicker('none')}
+        />
+      )}
+      {picker === 'resume' && (
+        <ResumeSelector
+          onSelect={(s) => void commands.applyResume(s)}
+          onCancel={() => setPicker('none')}
+        />
+      )}
+      {picker === 'provider' && (
+        <ProviderSelector
+          current={activeProvider}
+          hasKey={(id) => providerKeys.has(id)}
+          onSelect={(id) => void commands.applyProvider(id)}
+          onCancel={() => setPicker('none')}
+        />
+      )}
+
+      {pendingPermission && (
+        <PermissionPrompt
+          tool={pendingPermission.tool}
+          input={pendingPermission.input}
+          onPick={async (choice) => {
+            const req = pendingPermission;
+            setPendingPermission(undefined);
+            if (choice === 'yesSession') {
+              const match = matchPatternFor(req.tool, req.input);
+              const rule: Parameters<typeof appendProjectAllow>[1] = {
+                tool: req.tool,
+                decision: 'allow',
+              };
+              if (match !== undefined) rule.match = match;
+              try {
+                await appendProjectAllow(cwd, rule);
+                await refreshProjectPermissions();
+                appendHistory({
+                  role: 'system',
+                  text: `saved session rule: ${req.tool}${match ? ' ~ ' + match : ' (any input)'}`,
+                });
+              } catch (err) {
+                appendHistory({
+                  role: 'error',
+                  text: `failed to save permission: ${(err as Error).message}`,
+                });
+              }
+            }
+            req.resolve(choice);
+          }}
+        />
+      )}
+
+      {!pendingPermission && picker === 'none' && (
+        <Box flexDirection="column">
+          <TodoList todos={todos} />
+          {tools.activeTools.length > 0 && (
+            <ActiveToolsPanel tools={tools.activeTools} cwd={cwd} verbose={verbose} />
+          )}
+          {busy && stream.subPreviews.length > 0 && (
+            <SubagentPanel subs={stream.subPreviews} verbose={verbose} />
+          )}
+          {busy && (
+            <ThinkingLine text={stream.thinking} verbose={verbose} startedAt={busyStartedAt} />
+          )}
+          {busy && stream.streamingText && (
+            <StreamingPreview text={stream.streamingText} verbose={verbose} />
+          )}
+          {queue.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Box>
+                <Text color={t.info} bold>{'» '}</Text>
+                <Text color={t.info} bold>queued ({queue.length})</Text>
+                <Text color={t.muted}>  sends when agent idles</Text>
+              </Box>
+              <Box
+                flexDirection="column"
+                borderStyle="single"
+                borderLeft
+                borderTop={false}
+                borderRight={false}
+                borderBottom={false}
+                borderColor={t.info}
+                paddingLeft={1}
+              >
+                {queue.map((q, i) => (
+                  <Box key={i}>
+                    <Text color={t.info}>{i + 1}. </Text>
+                    <Text color={t.text} wrap="truncate-end">{q}</Text>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+          <Box borderStyle="round" borderColor={promptColor} paddingX={1}>
+            <Text color={promptColor} bold>{busy ? '.' : '>'} </Text>
+            <SimpleTextInput
+              value={input}
+              onChange={setInput}
+              onSubmit={submit}
+              onHistoryUp={() => {
+                if (paletteOpen) return null;
+                return inputHistoryRef.current.up();
+              }}
+              onHistoryDown={() => {
+                if (paletteOpen) return null;
+                return inputHistoryRef.current.down();
+              }}
+              placeholder={busy ? 'type to queue -- sends when ready' : 'ask forge to build, edit, or explain'}
+            />
+          </Box>
+          {paletteOpen && <CommandPalette commands={palette} cursor={cursor} />}
+          <Box paddingX={1} flexDirection="column">
+            <StatusBar
+              model={activeModel}
+              effort={activeEffort}
+              auth={auth}
+              cwd={cwd}
+              provider={activeProvider}
+              permissionMode={permissionMode}
+              tokens={stats.tokens}
+              template={settings?.statusLine}
+            />
+            <Text color={t.muted} wrap="truncate-end">
+              enter send · / cmds · ctrl+o details{verbose ? '*' : ''} · esc cancel · ctrl+c exit
+            </Text>
+          </Box>
         </Box>
       )}
     </Box>

@@ -44,6 +44,18 @@ export class TodoStore {
     this.emit();
   }
 
+  // Replace entire list from an SDK TodoWrite payload. Each render reassigns
+  // IDs so the on-screen order matches the agent's ordering.
+  replaceFromAgent(items: Array<{ content?: string; activeForm?: string; status?: string }>): void {
+    this.items = items.map((it, i) => {
+      const status = mapAgentStatus(it.status);
+      const text = (status === 'doing' ? it.activeForm : it.content) || it.content || it.activeForm || '';
+      return { id: i + 1, text, status };
+    });
+    this.nextId = this.items.length + 1;
+    this.emit();
+  }
+
   subscribe(fn: (items: Todo[]) => void): () => void {
     this.listeners.add(fn);
     return () => {
@@ -67,4 +79,10 @@ function badge(s: TodoStatus): string {
   if (s === 'done') return '[x]';
   if (s === 'doing') return '[~]';
   return '[ ]';
+}
+
+function mapAgentStatus(s?: string): TodoStatus {
+  if (s === 'completed') return 'done';
+  if (s === 'in_progress') return 'doing';
+  return 'pending';
 }

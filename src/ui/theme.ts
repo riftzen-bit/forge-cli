@@ -17,8 +17,11 @@ export type Theme = {
   diffDel: string;
   diffCtx: string;
   userBg: string;
-  planMode: string;
   toolTag: string;
+  // Permission-mode banner / border colors. One per non-default mode.
+  modePlan: string;
+  modeYolo: string;
+  modeAutoAccept: string;
 };
 
 const darkTheme: Theme = {
@@ -38,8 +41,10 @@ const darkTheme: Theme = {
   diffDel:      '#d78787',
   diffCtx:      '#8a8a8a',
   userBg:       '#2e3440',
-  planMode:     '#b48ead',
   toolTag:      '#e6b450',
+  modePlan:        '#5fafff',
+  modeYolo:        '#ff5f5f',
+  modeAutoAccept:  '#1f7a1f',
 };
 
 const lightTheme: Theme = {
@@ -59,8 +64,10 @@ const lightTheme: Theme = {
   diffDel:      '#a4001f',
   diffCtx:      '#707070',
   userBg:       '#e0e4ec',
-  planMode:     '#7a3f8f',
   toolTag:      '#8a6d00',
+  modePlan:        '#0042a0',
+  modeYolo:        '#a4001f',
+  modeAutoAccept:  '#1f7a1f',
 };
 
 let current: Theme = darkTheme;

@@ -14,7 +14,19 @@ export type MemoryFile = {
 
 const MAX_INCLUDE_DEPTH = 5;
 const MEMORY_INSTRUCTION_PROMPT =
-  'Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.';
+  'Codebase and user instructions are shown below. These are HARD requirements — not suggestions. You MUST follow every rule exactly as written. They OVERRIDE any default behavior in this system prompt. Before you report any task complete, re-read this block and confirm every applicable rule was followed. If you cannot follow a rule, stop and ask the user.';
+
+// Filenames treated as agent memory. AGENTS.md is a community-standard name
+// for agent instructions; CLAUDE.md / CLAUDE.local.md are the Claude Code
+// conventions. All are loaded with equal weight.
+const PROJECT_MEMORY_FILENAMES = ['AGENTS.md', 'CLAUDE.md'] as const;
+const LOCAL_MEMORY_FILENAMES = ['AGENTS.local.md', 'CLAUDE.local.md'] as const;
+const USER_MEMORY_SUBPATHS = [
+  ['.claude', 'CLAUDE.md'],
+  ['.forge', 'CLAUDE.md'],
+  ['.claude', 'AGENTS.md'],
+  ['.forge', 'AGENTS.md'],
+] as const;
 
 export type LoadOptions = {
   cwd?: string;
@@ -132,19 +144,19 @@ export async function loadMemoryFiles(opts: LoadOptions = {}): Promise<MemoryFil
   const seen = new Set<string>();
   const out: MemoryFile[] = [];
 
-  const userCandidates = [
-    join(home, '.claude', 'CLAUDE.md'),
-    join(home, '.forge', 'CLAUDE.md'),
-  ];
-  for (const p of userCandidates) {
-    await processFile(p, 'User', home, seen, 0, undefined, out);
+  for (const segs of USER_MEMORY_SUBPATHS) {
+    await processFile(join(home, ...segs), 'User', home, seen, 0, undefined, out);
   }
 
   const dirs = walkUp(cwd).reverse();
   for (const dir of dirs) {
-    await processFile(join(dir, 'CLAUDE.md'), 'Project', home, seen, 0, undefined, out);
-    await processFile(join(dir, '.claude', 'CLAUDE.md'), 'Project', home, seen, 0, undefined, out);
-    await processFile(join(dir, 'CLAUDE.local.md'), 'Local', home, seen, 0, undefined, out);
+    for (const name of PROJECT_MEMORY_FILENAMES) {
+      await processFile(join(dir, name), 'Project', home, seen, 0, undefined, out);
+      await processFile(join(dir, '.claude', name), 'Project', home, seen, 0, undefined, out);
+    }
+    for (const name of LOCAL_MEMORY_FILENAMES) {
+      await processFile(join(dir, name), 'Local', home, seen, 0, undefined, out);
+    }
   }
 
   return out;

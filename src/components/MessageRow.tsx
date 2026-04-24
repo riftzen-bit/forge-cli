@@ -43,9 +43,9 @@ function formatToolInput(input: Record<string, unknown>): string[] {
 }
 
 function statusGlyph(status: 'run' | 'ok' | 'err' | undefined, t: ReturnType<typeof getTheme>) {
-  if (!status || status === 'run') return <Text color={t.warn}>{'◇'}</Text>;
-  if (status === 'ok') return <Text color={t.success}>{'◆'}</Text>;
-  return <Text color={t.error}>{'◆'}</Text>;
+  if (!status || status === 'run') return <Text color={t.warn}>●</Text>;
+  if (status === 'ok') return <Text color={t.success}>●</Text>;
+  return <Text color={t.error}>●</Text>;
 }
 
 function formatMs(ms: number): string {
@@ -153,8 +153,8 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
           {stats && <Text color={t.accentDim}>{stats}</Text>}
           {dur && <Text color={t.muted}>  {dur}</Text>}
         </Box>
-        {diff && base === 'Edit' && <Diff oldText={diff.old} newText={diff.next} />}
-        {verbose && diff && base === 'Write' && <Diff oldText={diff.old} newText={diff.next} />}
+        {diff && base === 'Edit' && <Diff oldText={diff.old} newText={diff.next} verbose={verbose} />}
+        {verbose && diff && base === 'Write' && <Diff oldText={diff.old} newText={diff.next} verbose />}
         {verbose && !diff && (
           <Box flexDirection="column" paddingLeft={2}>
             {formatToolInput(m.input).map((line, j) => (
@@ -162,18 +162,72 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
             ))}
           </Box>
         )}
-        {verbose && m.status === 'ok' && m.output && (
+        {m.status === 'ok' && m.output && !diff && (
           <Box paddingLeft={2}>
-            <Text color={t.muted}>{'└ '}{cleanPreview(m.output)}</Text>
+            <Text color={t.muted}>{'  └ '}{cleanPreview(m.output)}</Text>
+          </Box>
+        )}
+        {m.status === 'err' && m.output && (
+          <Box paddingLeft={2}>
+            <Text color={t.error}>{'  └ '}{cleanPreview(m.output)}</Text>
           </Box>
         )}
       </Box>
     );
   }
+  if (m.role === 'shell') {
+    const ok = m.code === 0;
+    const stdout = m.stdout.replace(/\s+$/, '');
+    const stderr = m.stderr.replace(/\s+$/, '');
+    const lines = stdout ? stdout.split(/\r?\n/) : [];
+    const errLines = stderr ? stderr.split(/\r?\n/) : [];
+    const maxOut = verbose ? 200 : 30;
+    const visibleOut = lines.slice(0, maxOut);
+    const hiddenOut = lines.length - visibleOut.length;
+    const visibleErr = errLines.slice(0, verbose ? 60 : 10);
+    const hiddenErr = errLines.length - visibleErr.length;
+    return (
+      <Box flexDirection="column" marginTop={1} marginBottom={1}>
+        <Box>
+          <Text color={ok ? t.success : t.error} bold>$ </Text>
+          <Text color={t.text}>{m.command}</Text>
+          <Text color={t.muted}>  exit {m.code}  {formatMs(m.ms)}</Text>
+        </Box>
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderLeft
+          borderTop={false}
+          borderRight={false}
+          borderBottom={false}
+          borderColor={ok ? t.muted : t.error}
+          paddingLeft={1}
+        >
+          {visibleOut.map((ln, i) => (
+            <Text key={`o${i}`} color={t.text}>{ln || ' '}</Text>
+          ))}
+          {hiddenOut > 0 && (
+            <Text color={t.muted}>... +{hiddenOut} line{hiddenOut === 1 ? '' : 's'} (ctrl+o to expand)</Text>
+          )}
+          {visibleErr.map((ln, i) => (
+            <Text key={`e${i}`} color={t.error}>{ln || ' '}</Text>
+          ))}
+          {hiddenErr > 0 && (
+            <Text color={t.muted}>... +{hiddenErr} stderr line{hiddenErr === 1 ? '' : 's'}</Text>
+          )}
+          {visibleOut.length === 0 && visibleErr.length === 0 && (
+            <Text color={t.muted}>(no output)</Text>
+          )}
+        </Box>
+      </Box>
+    );
+  }
   if (m.role === 'system') {
     return (
-      <Box>
-        <Text color={t.muted}>· {m.text}</Text>
+      <Box flexDirection="column">
+        {m.text.split(/\r?\n/).map((ln, i) => (
+          <Text key={i} color={t.muted}>{i === 0 ? '· ' : '  '}{ln}</Text>
+        ))}
       </Box>
     );
   }

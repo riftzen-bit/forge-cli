@@ -6,7 +6,11 @@ export type CaptureResult =
   | { ok: true; path: string; tokenPreview: string }
   | { ok: false; reason: string };
 
-const TOKEN_PATTERN = /sk-ant-[A-Za-z0-9_\-]{20,}/;
+// Claude Code's `setup-token` prints OAuth tokens beginning with `sk-ant-oat`.
+// Matching that prefix avoids grabbing unrelated `sk-ant-` strings (e.g. an
+// error message referring to an old API key) that may be interleaved in the
+// captured output.
+const TOKEN_PATTERN = /sk-ant-oat0?[A-Za-z0-9_\-]{20,}/;
 
 export async function runSetupTokenCapture(): Promise<CaptureResult> {
   const bin = findClaudeCodeBin();

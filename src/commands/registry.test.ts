@@ -11,8 +11,8 @@ describe('filterCommands', () => {
   });
 
   test('prefix filters case-insensitively', () => {
-    const names = filterCommands('/mo').map((c) => c.name);
-    expect(names).toEqual(['model']);
+    const names = filterCommands('/mod').map((c) => c.name);
+    expect(names).toEqual(['model', 'mode']);
   });
 
   test('unknown prefix returns empty', () => {

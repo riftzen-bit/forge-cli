@@ -1,6 +1,6 @@
 # Forge
 
-Terminal-native coding agent powered by the Claude Agent SDK. A Claude Code–style experience in Ink/React with diff rendering, streaming thinking, concurrent agents, todos, plan mode, hooks, MCP, auto-compact, and permission rules.
+Terminal-native coding agent powered by the Claude Agent SDK. A Claude Code–style experience in Ink/React with diff rendering, streaming thinking, concurrent agents, todos, plan mode, hooks, MCP, auto-compact, permission rules, **multi-provider routing** (Anthropic / OpenRouter / DeepSeek / Z.ai / GLM / Kimi / NVIDIA / OpenAI), and code-intel slash commands (`/review`, `/explain`, `/test`, `/diff`, `/commit`, `/stats`, `/cost`).
 
 Forge is an open alternative you can read end-to-end and customize. Contributions welcome.
 
@@ -8,18 +8,23 @@ Forge is an open alternative you can read end-to-end and customize. Contribution
 
 ## Features
 
-- **Streaming thinking** — model reasoning is rendered live while the agent works, then persisted so you can audit how decisions were made.
+- **Multi-provider** — point Forge at any Anthropic-Messages-compatible endpoint. Native support: Anthropic, OpenRouter, DeepSeek (Anthropic-compat), Z.ai / GLM, Kimi / Moonshot. Via LiteLLM proxy: NVIDIA NIM, OpenAI, or any custom endpoint.
+- **Streaming thinking + text** — model reasoning and final reply both stream live. Thinking blocks are flushed to history at each tool call so the live panel never shows stale thought.
 - **Claude-style diffs** — `● Update(path)` / `● Create(path)` headers, added/removed line counts, numbered side-by-side context, red/green full-width stripes.
 - **Concurrent agents** — `/parallel taskA || taskB || taskC` spawns multiple agents at once with a shared file lock so they never step on each other.
 - **Subagents** — `/task <goal>` spawns a fresh agent for a side-quest without polluting the main thread.
+- **Code intelligence** — `/review` structured code review, `/explain <path>[:L1-L2]` explains code range, `/test` runs + summarises suite, `/diff` renders git diff, `/commit` AI-generated Conventional Commit for staged changes.
+- **Session stats + cost** — `/stats` tokens / tools / elapsed; `/cost` estimated USD per model/provider from live usage.
+- **Input history** — Up/Down recalls past prompts across sessions, persisted to `~/.forge/history.jsonl`.
+- **Smarter errors** — 401 → "run /login", 429 → auto-retry with backoff, network → retry, quota → switch-provider hint.
 - **Plan mode** — `/plan` toggles read-only reasoning. The agent may think and propose but cannot write, edit, or execute.
 - **Todos** — `/todo add`, `/todo doing N`, `/todo done N`, `/todo list`. Visible as a live panel above the input.
 - **Auto-compact** — at 160k tokens you get a warning; at 180k Forge summarises the history and keeps the tail so you never hit the 200k wall mid-task.
 - **Permission rules** — allow/deny lists with wildcard + regex patterns in `settings.json`.
 - **Hooks** — pre/post-tool shell hooks (run tests before every edit, lint after every write, etc).
-- **MCP servers** — pass through MCP server config from `settings.json`.
-- **Custom status line** — template variables like `{model} {effort} {cwd} {ctx}` in `settings.json`.
-- **OAuth or API key** — either route your calls through Claude Code's official credential store, or drop in your own `sk-ant-` key.
+- **MCP servers** — manage live with `/mcp list|add|rm` or declare in `settings.json`.
+- **Custom status line** — template variables like `{model} {provider} {effort} {cwd} {ctx}` in `settings.json`.
+- **OAuth or API key** — either route your calls through Claude Code's official credential store, or drop in your own `sk-ant-` key. Per-provider keys stored in `~/.forge/keys.json` (0600).
 
 ---
 
@@ -64,10 +69,20 @@ forge "build a React + Vite todo app with TypeScript, Tailwind, local-storage \
 |---|---|
 | `/help` | List commands. |
 | `/model [id]` | Open picker or set model. |
-| `/effort [level]` | Open picker or set reasoning effort (Low–X-High). |
+| `/provider [id]` | Open provider picker (anthropic / openrouter / deepseek / zai / glm / kimi / nvidia / openai / custom). |
+| `/effort [level]` | Open picker or set reasoning effort (Low, Medium, High, X-High, Max). |
 | `/plan` | Toggle plan mode (read-only reasoning). |
 | `/parallel a || b || c` | Run multiple agents concurrently with file-lock safety. |
 | `/task <goal>` | Spawn a subagent for a side-quest. |
+| `/review [path]` | Structured code review by a subagent. |
+| `/explain <path>[:L1-L2]` | Explain a file or line range. |
+| `/test [pattern]` | Detect runner, run tests, summarise pass/fail. |
+| `/diff [path]` | Render the git diff. |
+| `/commit` | AI-generated Conventional Commit message for the staged diff, then commits. |
+| `/stats` | Session stats: tokens, tool counts, elapsed, cost. |
+| `/cost` | Per-model cost breakdown for the active session. |
+| `/retry` | Resend the last user message. |
+| `/mcp list\|add\|rm` | Manage MCP servers without editing JSON. |
 | `/todo [list\|add\|doing N\|done N\|rm N\|clear]` | Manage the todo panel. |
 | `/compact` | Manually summarize history. |
 | `/resume` | Pick a past session to continue. |
@@ -83,19 +98,25 @@ Settings live at `~/.forge/settings.json` (zod-validated on load).
 
 ```json
 {
-  "defaultModel": "opus",
+  "defaultModel": "claude-opus-4-7",
   "effort": "X-High",
-  "statusLine": "{model} · {effort} · {cwd} · ctx {ctx}",
+  "activeProvider": "anthropic",
+  "providers": {
+    "openrouter": { "baseURL": "https://openrouter.ai/api" },
+    "custom": { "baseURL": "http://my-proxy:8080", "defaultModel": "anthropic/claude-opus-4.7" }
+  },
+  "statusLine": "{model}@{provider} · {effort} · {cwd} · ctx {ctx}",
+  "inputHistory": { "enabled": true, "max": 500 },
   "permissionRules": [
     { "tool": "Bash", "match": "rm\\s+-rf", "decision": "deny" },
     { "tool": "Write", "match": ".env$", "decision": "deny" }
   ],
   "hooks": {
     "preTool": [
-      { "tool": "Edit", "run": "echo pre-edit $FORGE_HOOK_INPUT >> ~/.forge/audit.log" }
+      { "match": "Edit", "run": "echo pre-edit $FORGE_HOOK_INPUT >> ~/.forge/audit.log" }
     ],
     "postTool": [
-      { "tool": "Write", "run": "prettier --write $FORGE_HOOK_INPUT_PATH" }
+      { "match": "Write", "run": "prettier --write $FORGE_HOOK_INPUT_PATH" }
     ]
   },
   "mcpServers": {
@@ -104,7 +125,7 @@ Settings live at `~/.forge/settings.json` (zod-validated on load).
 }
 ```
 
-Status-line template vars: `{model}`, `{effort}`, `{auth}`, `{cwd}`, `{plan}`, `{ctx}` (percent), `{tokens}` (raw).
+Status-line template vars: `{model}`, `{provider}`, `{effort}`, `{auth}`, `{cwd}`, `{plan}`, `{ctx}` (percent), `{tokens}` (raw).
 
 Hook env passed to shell: `FORGE_HOOK_TOOL`, `FORGE_HOOK_PHASE` (`pre` or `post`), `FORGE_HOOK_INPUT` (JSON).
 
@@ -118,28 +139,68 @@ Hook env passed to shell: `FORGE_HOOK_TOOL`, `FORGE_HOOK_PHASE` (`pre` or `post`
 | `forge "<prompt>"` | One-shot. Agent executes and exits. |
 | `forge -p "<prompt>"` | Same, explicit flag. |
 | `forge -m <model> "<prompt>"` | Override model for this run. |
-| `forge login` | Interactive auth (OAuth or API key). |
-| `forge set login <key>` | Store API key non-interactively. |
+| `forge login` | Interactive auth (OAuth or API key, Anthropic). |
+| `forge login --provider <id>` | Login for another provider (`openrouter`, `deepseek`, `zai`, `glm`, `kimi`, `nvidia`, `openai`, `custom`). Prompts for base URL on non-native or custom providers. |
+| `forge login --oauth` | Run `claude setup-token` and capture the token. |
+| `forge set provider <id>` | Set active provider. |
+| `forge set baseurl <url> [--provider <id>]` | Override base URL for a provider. |
 | `forge set model <alias\|id>` | Set default model. |
+| `forge set login <key>` | Store Anthropic API key non-interactively. |
 | `forge set theme <dark\|light>` | UI theme. |
 | `forge set telemetry <on\|off>` | Toggle telemetry. |
 | `forge config` | Dump settings JSON. |
 | `forge config --get <key>` | Read one setting. |
 | `forge config --set k=v` | Write one setting. |
-| `forge version` | Version + known model aliases. |
+| `forge version` | Version + active provider + models. |
 | `map ...` | Alias of `forge ...`. |
+
+### Provider setup examples
+
+```bash
+# Anthropic (default)
+forge login                              # paste sk-ant-... key
+
+# OpenRouter — one key, many models
+forge login --provider openrouter        # paste sk-or-... key
+forge set provider openrouter
+forge set model anthropic/claude-sonnet-4.5
+
+# DeepSeek (native Anthropic-compat)
+forge login --provider deepseek
+forge set provider deepseek
+forge set model deepseek-chat
+
+# NVIDIA NIM via LiteLLM proxy
+pip install litellm
+litellm --model nvidia/llama-3.1-nemotron-70b-instruct --port 4000 &
+forge login --provider nvidia            # paste nvapi-... key
+forge set provider nvidia
+# (baseurl defaults to http://localhost:4000 — override with `forge set baseurl`)
+
+# OpenAI via LiteLLM proxy (Anthropic-compat wrapper)
+litellm --model openai/gpt-4o --port 4000 --api_key $OPENAI_API_KEY &
+forge login --provider openai
+forge set provider openai
+forge set model gpt-4o
+```
 
 ---
 
 ## Models
 
-| Alias | ID |
-|---|---|
-| `opus` | `claude-opus-4-7` |
-| `sonnet` | `claude-sonnet-4-5` *(default)* |
-| `haiku` | `claude-haiku-4-5` |
+Built-in catalog (provider-tagged). `resolveModel()` accepts both label and ID.
 
-Edit `src/agent/models.ts` to refresh.
+| Provider | Example IDs |
+|---|---|
+| Anthropic | `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
+| OpenRouter | `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-2.5-pro`, `deepseek/deepseek-chat`, `meta-llama/llama-3.1-70b-instruct` |
+| DeepSeek | `deepseek-chat`, `deepseek-reasoner` |
+| Z.ai / GLM | `glm-4.6`, `glm-4.6-flash` |
+| Kimi | `kimi-k2`, `kimi-k2-turbo-preview` |
+| NVIDIA NIM | `nvidia/llama-3.1-nemotron-70b-instruct`, `nvidia/llama-3.1-nemotron-ultra-253b-v1` |
+| OpenAI | `gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini` |
+
+Default: `claude-opus-4-7`. Edit `src/agent/models.ts` to add/refresh.
 
 ---
 
@@ -172,7 +233,7 @@ src/agent/contextBudget.ts     token estimation + warn/compact thresholds
 src/agent/permissions.ts       allow/deny rule matcher
 src/agent/hooks.ts             pre/post shell hook runner
 src/agent/models.ts            alias → id
-src/agent/effort.ts            Low..X-High → thinking token budget
+src/agent/effort.ts            Low..Max → thinking token budget
 src/agent/systemPrompt.ts      inlined SYSTEM_PROMPT + memory-file composition
 src/auth/                      OAuth + API-key paths, keychain, status detection
 src/config/                    paths, settings zod, token store

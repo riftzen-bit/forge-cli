@@ -22,6 +22,10 @@ export async function runHooks(hooks: Hook[], ctx: HookContext): Promise<void> {
   await Promise.all(applicable.map((h) => runOne(h, ctx)));
 }
 
+// Hooks are user-configured shell commands. Hang or runaway output shouldn't
+// wedge the agent loop — cap each hook at HOOK_TIMEOUT_MS and then continue.
+const HOOK_TIMEOUT_MS = 10_000;
+
 function runOne(hook: Hook, ctx: HookContext): Promise<void> {
   return new Promise((resolve) => {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
@@ -32,12 +36,24 @@ function runOne(hook: Hook, ctx: HookContext): Promise<void> {
       FORGE_HOOK_PHASE: ctx.phase,
       FORGE_HOOK_INPUT: JSON.stringify(ctx.input),
     };
+    let settled = false;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
     const child = spawn(shell, [flag, hook.run], {
       cwd: ctx.cwd,
       env,
       stdio: 'ignore',
+      windowsHide: true,
     });
-    child.on('exit', () => resolve());
-    child.on('error', () => resolve());
+    const timer = setTimeout(() => {
+      try { child.kill('SIGTERM'); } catch { /* ignore */ }
+      done();
+    }, HOOK_TIMEOUT_MS);
+    child.on('exit', done);
+    child.on('error', done);
   });
 }

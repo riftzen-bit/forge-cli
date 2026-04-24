@@ -3,11 +3,18 @@ import { z } from 'zod';
 import { AgentClient, type ToolStartEvent, type ToolResultEvent } from './client.js';
 import type { FileCoordinator } from './fileLocks.js';
 import type { Effort } from './effort.js';
+import type { ProviderConfig } from '../config/settings.js';
+import {
+  EXPLORE_AGENT,
+  GENERAL_PURPOSE_AGENT,
+  VERIFICATION_AGENT,
+} from '../prompts/index.js';
 
 export type SpawnEvent =
   | { kind: 'toolStart'; id: string; tool: string; input: Record<string, unknown> }
   | { kind: 'toolResult'; id: string; ok: boolean; ms: number; preview?: string; lines?: number }
   | { kind: 'thinking'; delta: string }
+  | { kind: 'text'; delta: string }
   | { kind: 'done'; reply: string }
   | { kind: 'error'; message: string };
 
@@ -15,6 +22,8 @@ type SpawnServerOpts = {
   coordinator: FileCoordinator;
   getModel: () => string;
   getEffort: () => Effort;
+  getProvider?: () => string;
+  getProviderConfig?: () => ProviderConfig;
   onEvent: (tag: string, ev: SpawnEvent) => void;
 };
 
@@ -27,16 +36,29 @@ let tagCounter = 0;
 const nextTag = (): string => `sub${++tagCounter}`;
 
 export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
-  const run = async (task: string, tag: string): Promise<string> => {
-    const client = new AgentClient({
+  const subagentPromptFor = (type?: string): string | undefined => {
+    if (type === 'Explore' || type === 'explore') return EXPLORE_AGENT;
+    if (type === 'verification' || type === 'verification-specialist') return VERIFICATION_AGENT;
+    if (type === 'general-purpose' || type === undefined || type === null || type === '') return GENERAL_PURPOSE_AGENT;
+    return undefined;
+  };
+
+  const runTyped = async (task: string, tag: string, subagentType?: string): Promise<string> => {
+    const clientOpts: ConstructorParameters<typeof AgentClient>[0] = {
       model: opts.getModel(),
       effort: opts.getEffort(),
       locks: opts.coordinator,
       agentTag: tag,
-    });
+    };
+    if (opts.getProvider) clientOpts.provider = opts.getProvider();
+    if (opts.getProviderConfig) clientOpts.providerConfig = opts.getProviderConfig();
+    const client = new AgentClient(clientOpts);
+    const persona = subagentPromptFor(subagentType);
+    const fullTask = persona ? `${persona}\n\n--- YOUR TASK ---\n${task}` : task;
     try {
-      const reply = await client.send(task, {
+      const reply = await client.send(fullTask, {
         onThinking: (delta) => opts.onEvent(tag, { kind: 'thinking', delta }),
+        onText: (delta) => opts.onEvent(tag, { kind: 'text', delta }),
         onToolStart: (ev: ToolStartEvent) => opts.onEvent(tag, {
           kind: 'toolStart', id: ev.id, tool: ev.name, input: ev.input,
         }),
@@ -55,14 +77,16 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
 
   const spawnAgent = tool(
     'spawn_agent',
-    'Spawn a subagent to run an independent task. The subagent shares file locks with the main agent so concurrent reads are allowed but writes are serialized. Use for focused work that can proceed without blocking the main thread, e.g. exploration, isolated fixes, research.',
+    'Spawn a subagent to run an independent task. The subagent shares file locks with the main agent so concurrent reads are allowed but writes are serialized. Use for focused work that can proceed without blocking the main thread, e.g. exploration, isolated fixes, research. Pass subagent_type="Explore" for read-only search agents, "verification" for adversarial verification, or omit for general-purpose.',
     {
       task: z.string().describe('Full instructions for the subagent. Be specific and self-contained.'),
       description: z.string().optional().describe('Short 3-5 word label shown in the UI.'),
+      subagent_type: z.enum(['Explore', 'general-purpose', 'verification']).optional()
+        .describe('Subagent persona. Explore = read-only codebase search. verification = adversarial test runner. general-purpose = default research + edit agent.'),
     },
     async (args) => {
       const tag = nextTag();
-      const reply = await run(args.task, tag);
+      const reply = await runTyped(args.task, tag, args.subagent_type);
       return {
         content: [{ type: 'text', text: `[${tag}] ${reply}` }],
       };
@@ -76,6 +100,8 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
       tasks: z.array(z.object({
         task: z.string().describe('Full instructions for this subagent.'),
         description: z.string().optional().describe('Short label shown in the UI.'),
+        subagent_type: z.enum(['Explore', 'general-purpose', 'verification']).optional()
+          .describe('Subagent persona for this task.'),
       })).min(1).describe('List of independent tasks. Each spawns one concurrent subagent.'),
     },
     async (args) => {
@@ -83,7 +109,7 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
         args.tasks.map(async (t) => {
           const tag = nextTag();
           try {
-            const reply = await run(t.task, tag);
+            const reply = await runTyped(t.task, tag, t.subagent_type);
             return { tag, ok: true, reply };
           } catch (err) {
             return {

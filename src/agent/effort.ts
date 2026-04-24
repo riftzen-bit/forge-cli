@@ -1,4 +1,4 @@
-export const EFFORT_LEVELS = ['Low', 'Medium', 'High', 'Max', 'X-High'] as const;
+export const EFFORT_LEVELS = ['Low', 'Medium', 'High', 'X-High', 'Max'] as const;
 
 export type Effort = (typeof EFFORT_LEVELS)[number];
 
@@ -6,8 +6,8 @@ export const EFFORT_BUDGET: Record<Effort, number> = {
   Low: 1024,
   Medium: 4000,
   High: 10000,
-  Max: 20000,
-  'X-High': 32000,
+  'X-High': 31999,
+  Max: 127999,
 };
 
 export const DEFAULT_EFFORT: Effort = 'Medium';

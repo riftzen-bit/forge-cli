@@ -1,6 +1,7 @@
 import { AgentClient } from './client.js';
 import { FileCoordinator } from './fileLocks.js';
 import type { Effort } from './effort.js';
+import type { ProviderConfig } from '../config/settings.js';
 
 export type PoolEvent =
   | { kind: 'thinking'; delta: string }
@@ -13,6 +14,8 @@ export type PoolEvent =
 export type PoolConfig = {
   model: string;
   effort: Effort;
+  provider?: string;
+  providerConfig?: ProviderConfig;
 };
 
 export type PoolResult = { index: number; tag: string; reply?: string; error?: string };
@@ -35,12 +38,15 @@ export class AgentPool {
   ): Promise<PoolResult[]> {
     const jobs = tasks.map((task, i) => {
       const tag = `A${i + 1}`;
-      const client = new AgentClient({
+      const clientOpts: ConstructorParameters<typeof AgentClient>[0] = {
         model: config.model,
         effort: config.effort,
         locks: this.locks,
         agentTag: tag,
-      });
+      };
+      if (config.provider) clientOpts.provider = config.provider;
+      if (config.providerConfig) clientOpts.providerConfig = config.providerConfig;
+      const client = new AgentClient(clientOpts);
       return client
         .send(task, {
           onThinking: (delta) => onEvent(i, tag, { kind: 'thinking', delta }),

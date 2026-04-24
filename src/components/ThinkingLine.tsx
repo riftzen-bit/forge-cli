@@ -11,7 +11,7 @@ type Props = {
 
 const TICKS = ['|', '/', '-', '\\'];
 
-export function ThinkingLine({ text, verbose = false, maxLines = 5, startedAt }: Props) {
+export function ThinkingLine({ text, verbose = false, maxLines = 3, startedAt }: Props) {
   const t = getTheme();
   const [tick, setTick] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -34,14 +34,17 @@ export function ThinkingLine({ text, verbose = false, maxLines = 5, startedAt }:
   const charCount = condensed.length;
   const elapsed = startedAt ? `${((now - startedAt) / 1000).toFixed(1)}s` : '';
 
+  const label = charCount > 0 ? 'thinking' : 'working';
+  const labelColor = charCount > 0 ? t.info : t.accentDim;
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box>
         <Text color={t.accent}>{TICKS[tick]}</Text>
-        <Text color={t.accentDim}> working</Text>
+        <Text color={labelColor} bold> {label}</Text>
         {elapsed && <Text color={t.muted}> {elapsed}</Text>}
         {charCount > 0 && (
-          <Text color={t.muted}>  ({charCount} chars, ctrl+o expand)</Text>
+          <Text color={t.muted}>  ({charCount} chars{verbose ? '' : ', ctrl+o expand'})</Text>
         )}
       </Box>
       {visible.map((line, i) => (

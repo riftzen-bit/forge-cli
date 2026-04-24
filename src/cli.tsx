@@ -33,9 +33,10 @@ program
 
 program
   .command('login')
-  .description('Save Anthropic API token to hidden file in install dir.')
+  .description('Save API key for a provider.')
   .option('--oauth', 'run `claude setup-token` and capture the printed token')
-  .action((opts: { oauth?: boolean }) => loginCommand(opts));
+  .option('--provider <id>', 'provider: anthropic | openrouter | deepseek | zai | glm | kimi | nvidia | openai | custom')
+  .action((opts: { oauth?: boolean; provider?: string }) => loginCommand(opts));
 
 registerSetCommand(program);
 

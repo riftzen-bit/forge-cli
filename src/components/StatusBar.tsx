@@ -1,21 +1,31 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
-import { labelFor } from '../agent/models.js';
+import { labelFor, contextWindowFor } from '../agent/models.js';
 import type { Effort } from '../agent/effort.js';
 import type { AuthStatus } from '../auth/status.js';
 import { authBadge } from '../auth/status.js';
 import { getTheme } from '../ui/theme.js';
+import { providerFor } from '../agent/providers.js';
+import type { PermissionMode } from '../config/settings.js';
 
 type Props = {
   model: string;
   effort: Effort;
   auth: AuthStatus;
   cwd: string;
-  planMode?: boolean;
+  provider?: string;
+  permissionMode?: PermissionMode;
   tokens?: number;
   tokenLimit?: number;
   template?: string;
 };
+
+function modeBadge(mode: PermissionMode | undefined): { label: string; colorKey: 'accent' | 'modePlan' | 'modeYolo' | 'modeAutoAccept' } {
+  if (mode === 'plan')       return { label: '-- PLAN --',        colorKey: 'modePlan' };
+  if (mode === 'yolo')       return { label: '-- YOLO --',        colorKey: 'modeYolo' };
+  if (mode === 'autoAccept') return { label: '-- AUTO-ACCEPT --', colorKey: 'modeAutoAccept' };
+  return { label: '-- READY --', colorKey: 'accent' };
+}
 
 export function renderTemplate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_m, k: string) => vars[k] ?? '');
@@ -44,12 +54,22 @@ function formatTokens(n: number): string {
   return (n / 1_000_000).toFixed(2) + 'M';
 }
 
-export function StatusBar({ model, effort, auth, cwd, planMode, tokens, tokenLimit, template }: Props) {
+export const StatusBar = memo(_StatusBar);
+
+function _StatusBar({ model, effort, auth, cwd, provider, permissionMode, tokens, tokenLimit, template }: Props) {
   const t = getTheme();
   const badge = authBadge(auth);
   const cwdShort = shortCwd(cwd);
-  const pct = typeof tokens === 'number' && tokenLimit ? Math.round((tokens / tokenLimit) * 100) : undefined;
+  const limit = tokenLimit ?? contextWindowFor(model);
+  const pct = typeof tokens === 'number' && limit
+    ? Math.max(0, Math.min(100, Math.round((tokens / limit) * 100)))
+    : undefined;
   const ctxColor = pct === undefined ? t.muted : pct >= 90 ? t.error : pct >= 80 ? t.warn : t.muted;
+  const providerLabel = provider ? providerFor(provider).label : '';
+  const ctxLabel = typeof tokens === 'number' && limit
+    ? `${formatTokens(tokens)}/${formatTokens(limit)}`
+    : '';
+  const badge_ = modeBadge(permissionMode);
 
   if (template) {
     const rendered = renderTemplate(template, {
@@ -57,9 +77,15 @@ export function StatusBar({ model, effort, auth, cwd, planMode, tokens, tokenLim
       effort,
       auth: badge.label,
       cwd: cwdShort,
-      plan: planMode ? 'plan' : '',
-      ctx: pct !== undefined ? `${pct}%` : '',
+      provider: providerLabel,
+      mode: permissionMode ?? 'default',
+      plan: permissionMode === 'plan' ? 'plan' : '',
+      yolo: permissionMode === 'yolo' ? 'yolo' : '',
+      autoaccept: permissionMode === 'autoAccept' ? 'auto' : '',
+      ctx: ctxLabel,
+      ctxPct: pct !== undefined ? `${pct}%` : '',
       tokens: tokens !== undefined ? String(tokens) : '',
+      limit: String(limit),
     });
     return (
       <Box>
@@ -68,10 +94,9 @@ export function StatusBar({ model, effort, auth, cwd, planMode, tokens, tokenLim
     );
   }
 
-  const modeLabel = planMode ? '-- PLAN --' : '-- READY --';
-  const modeColor = planMode ? t.planMode : t.accent;
-  const bar = tokens !== undefined && tokenLimit ? bucket(tokens, tokenLimit) : undefined;
-  const tokStr = tokens !== undefined ? formatTokens(tokens) : undefined;
+  const modeLabel = badge_.label;
+  const modeColor = t[badge_.colorKey];
+  const bar = tokens !== undefined && limit ? bucket(tokens, limit) : undefined;
 
   return (
     <Box>
@@ -79,14 +104,16 @@ export function StatusBar({ model, effort, auth, cwd, planMode, tokens, tokenLim
         <Text color={modeColor} bold>{modeLabel}</Text>
         <Text color={t.muted}>  </Text>
         <Text color={t.accent}>{labelFor(model)}</Text>
+        {providerLabel && <Text color={t.muted}>@</Text>}
+        {providerLabel && <Text color={t.info}>{providerLabel}</Text>}
         <Text color={t.muted}>  </Text>
         <Text color={t.info}>{effort}</Text>
         <Text color={t.muted}>  </Text>
         {bar && (
           <>
             <Text color={ctxColor}>[{bar}]</Text>
-            <Text color={ctxColor}> {pct}%</Text>
-            {tokStr && <Text color={t.muted}> {tokStr}</Text>}
+            <Text color={ctxColor}> {ctxLabel}</Text>
+            {pct !== undefined && <Text color={t.muted}> ({pct}%)</Text>}
             <Text color={t.muted}>  </Text>
           </>
         )}

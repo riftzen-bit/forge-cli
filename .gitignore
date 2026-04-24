@@ -9,3 +9,5 @@ dist
 .backups/
 IMPLEMENTATION_PLAN.md
 .claude/
+.tmp*
+
