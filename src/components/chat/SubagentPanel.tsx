@@ -7,8 +7,9 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../../ui/theme.js';
-import { useTick } from './useTick.js';
+import { useTick, SPINNER_FRAMES } from './useTick.js';
 import { chunkText } from './chunkText.js';
+import { G } from '../../ui/glyphs.js';
 import type { SubPreview } from './types.js';
 
 const SUB_COMPACT_LINES = 3;
@@ -22,7 +23,8 @@ type Props = {
 
 export function SubagentPanel({ subs, verbose }: Props) {
   const t = getTheme();
-  const { now } = useTick(200);
+  const { frame, now } = useTick(120);
+  const spin = SPINNER_FRAMES[frame] ?? '';
   const cols = process.stdout.columns ?? 100;
   const width = Math.max(40, cols - 10);
   const maxLines = verbose ? SUB_VERBOSE_LINES : SUB_COMPACT_LINES;
@@ -31,14 +33,16 @@ export function SubagentPanel({ subs, verbose }: Props) {
   if (collapse) {
     return (
       <Box flexDirection="column" marginTop={1}>
-        {subs.map((s) => {
+        {subs.map((s, i) => {
           const source = s.text ? 'reply' : 'thinking';
           const stream = (s.text || s.thinking).replace(/\s+/g, ' ').trim();
           const elapsed = ((now - s.startedAt) / 1000).toFixed(1);
           return (
             <Box key={s.tag}>
-              <Text color={t.accentDim}>[{s.tag}]</Text>
-              <Text color={t.muted}> {source}  {elapsed}s  ({stream.length} chars, ctrl+o expand)</Text>
+              <Text color={t.warn}>{i === 0 ? spin : G.toolRun}</Text>
+              <Text color={t.accentDim} bold> {s.tag}</Text>
+              <Text color={t.muted}>  {G.bullet}  {source}  {G.bullet}  {elapsed}s  {G.bullet}  {stream.length} chars</Text>
+              {!verbose && <Text color={t.muted}>  {G.bullet}  ctrl+o expand</Text>}
             </Box>
           );
         })}
@@ -48,7 +52,7 @@ export function SubagentPanel({ subs, verbose }: Props) {
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      {subs.map((s) => {
+      {subs.map((s, i) => {
         const source = s.text ? 'reply' : 'thinking';
         const stream = (s.text || s.thinking).replace(/\s+/g, ' ').trim();
         const chunks = chunkText(stream, width);
@@ -58,17 +62,18 @@ export function SubagentPanel({ subs, verbose }: Props) {
         return (
           <Box key={s.tag} flexDirection="column">
             <Box>
-              <Text color={t.accentDim}>[{s.tag}]</Text>
-              <Text color={t.muted}> {source}  {elapsed}s  ({stream.length} chars)</Text>
+              <Text color={t.warn}>{i === 0 ? spin : G.toolRun}</Text>
+              <Text color={t.accentDim} bold> {s.tag}</Text>
+              <Text color={t.muted}>  {G.bullet}  {source}  {G.bullet}  {elapsed}s  {G.bullet}  {stream.length} chars</Text>
             </Box>
-            {visible.map((ln, i) => (
-              <Box key={i} paddingLeft={2}>
+            {visible.map((ln, j) => (
+              <Box key={j} paddingLeft={2}>
                 <Text color={t.muted} italic>{ln}</Text>
               </Box>
             ))}
             {hidden > 0 && (
               <Box paddingLeft={2}>
-                <Text color={t.muted}>... +{hidden} line{hidden === 1 ? '' : 's'} (ctrl+o expand)</Text>
+                <Text color={t.muted}>{G.ellipsis} +{hidden} line{hidden === 1 ? '' : 's'} (ctrl+o expand)</Text>
               </Box>
             )}
           </Box>

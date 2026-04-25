@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../ui/theme.js';
+import { G } from '../ui/glyphs.js';
+import { useTick, SPINNER_FRAMES } from './chat/useTick.js';
 
 type Props = {
   text?: string;
@@ -9,20 +11,13 @@ type Props = {
   startedAt?: number;
 };
 
-const TICKS = ['|', '/', '-', '\\'];
-
+// Working/thinking indicator. Uses the shared braille spinner so it
+// matches ActiveToolsPanel cadence — both panels read as one synchronised
+// animation system instead of two competing ones.
 export function ThinkingLine({ text, verbose = false, maxLines = 3, startedAt }: Props) {
   const t = getTheme();
-  const [tick, setTick] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setTick((n) => (n + 1) % TICKS.length);
-      setNow(Date.now());
-    }, 250);
-    return () => clearInterval(id);
-  }, []);
+  const { frame, now } = useTick(120);
+  const spin = SPINNER_FRAMES[frame] ?? '';
 
   const condensed = text ? text.replace(/\s+/g, ' ').trim() : '';
   const width = Math.max(40, (process.stdout.columns ?? 100) - 6);
@@ -34,17 +29,18 @@ export function ThinkingLine({ text, verbose = false, maxLines = 3, startedAt }:
   const charCount = condensed.length;
   const elapsed = startedAt ? `${((now - startedAt) / 1000).toFixed(1)}s` : '';
 
-  const label = charCount > 0 ? 'thinking' : 'working';
-  const labelColor = charCount > 0 ? t.info : t.accentDim;
+  const isThinking = charCount > 0;
+  const label = isThinking ? 'thinking' : 'working';
+  const labelColor = isThinking ? t.info : t.accentDim;
 
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box>
-        <Text color={t.accent}>{TICKS[tick]}</Text>
-        <Text color={labelColor} bold> {label}</Text>
-        {elapsed && <Text color={t.muted}> {elapsed}</Text>}
-        {charCount > 0 && (
-          <Text color={t.muted}>  ({charCount} chars{verbose ? '' : ', ctrl+o expand'})</Text>
+        <Text color={t.accent}>{spin} </Text>
+        <Text color={labelColor} bold>{label}</Text>
+        {elapsed && <Text color={t.muted}>  {G.bullet}  {elapsed}</Text>}
+        {isThinking && (
+          <Text color={t.muted}>  {G.bullet}  {charCount} chars{verbose ? '' : `, ctrl+o expand`}</Text>
         )}
       </Box>
       {visible.map((line, i) => (
