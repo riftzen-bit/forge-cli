@@ -48,13 +48,20 @@ function run(cmd: string, args: string[], opts: { input?: string } = {}): Promis
 async function captureWindows(): Promise<ClipboardResult> {
   await mkdir(clipDir(), { recursive: true });
   const out = newPath('png');
+  // Clipboard.GetImage requires STA threading. PowerShell defaults to MTA
+  // on Windows 10+, where GetImage() returns $null even with image data
+  // present. The -Sta flag fixes this. Add-Type loads WinForms+Drawing.
+  const safe = out.replace(/'/g, "''");
   const ps = `
+$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 $img = [System.Windows.Forms.Clipboard]::GetImage()
 if ($img -eq $null) { exit 2 }
-$img.Save('${out.replace(/\\/g, '\\\\').replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png)
+$img.Save('${safe}', [System.Drawing.Imaging.ImageFormat]::Png)
+$img.Dispose()
 `;
-  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps]);
+  const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Sta', '-ExecutionPolicy', 'Bypass', '-Command', ps]);
   if (r.code === 2) return { ok: false, reason: 'clipboard does not contain an image' };
   if (r.code !== 0) return { ok: false, reason: r.stderr.trim() || 'powershell failed' };
   if (!(await ensureNonEmpty(out))) return { ok: false, reason: 'no image written' };

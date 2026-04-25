@@ -308,6 +308,59 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     if (cursor >= palette.length) setCursor(0);
   }, [palette.length, cursor]);
 
+  // Stable async paste helper used by both useInput and the raw-stdin
+  // listener so the two paths can't diverge. The lockout prevents a
+  // double-attach when a terminal forwards Ctrl+V to Ink's useInput AND
+  // the raw stdin sees the 0x16 byte for the same keystroke.
+  const lastPasteAtRef = useRef(0);
+  async function tryPasteImage(silent = false): Promise<void> {
+    const now = Date.now();
+    if (now - lastPasteAtRef.current < 250) return;
+    lastPasteAtRef.current = now;
+    const r = await captureClipboardImage();
+    if (r.ok) {
+      chatClient.client.attachImage(r.path);
+      appendHistory({ role: 'system', text: `attached image: ${r.path} (sends with next message)` });
+    } else if (!silent) {
+      appendHistory({ role: 'system', text: `paste image failed: ${r.reason}` });
+    }
+  }
+
+  // Raw-stdin listener: catches Ctrl+V (byte 0x16) BEFORE Ink's parser, so
+  // it works on terminals where Ink's useInput swallows or never receives
+  // the chord. Bracketed-paste markers are also probed: when a terminal
+  // sends \x1b[200~...\x1b[201~ for any paste, we peek the clipboard for
+  // an image (text-only paste yields a "no image" toast which is harmless).
+  useEffect(() => {
+    if (!process.stdin.isTTY) return;
+    let inPaste = false;
+    let pasteTimer: NodeJS.Timeout | undefined;
+    const onData = (chunk: Buffer | string): void => {
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      // Lone Ctrl+V byte (raw, before Ink's parser).
+      if (buf.length === 1 && buf[0] === 0x16) {
+        void tryPasteImage(false);
+        return;
+      }
+      const text = buf.toString('binary');
+      if (text.includes('\x1b[200~')) inPaste = true;
+      if (inPaste && text.includes('\x1b[201~')) {
+        inPaste = false;
+        if (pasteTimer) clearTimeout(pasteTimer);
+        pasteTimer = setTimeout(() => {
+          // silent: text-only paste returns "no image", which is expected
+          void tryPasteImage(true);
+        }, 30);
+      }
+    };
+    process.stdin.on('data', onData);
+    return () => {
+      process.stdin.off('data', onData);
+      if (pasteTimer) clearTimeout(pasteTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useInput((ch, key) => {
     // Permission prompt is modal — its own useInput handles arrows/enter.
     if (pendingPermission) return;
@@ -319,18 +372,14 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
       appendHistory({ role: 'system', text: msg });
       return;
     }
-    // Ctrl+V: try to grab an image from the OS clipboard. If clipboard is
-    // text or no image is present, we just no-op — the terminal's own paste
-    // (which inserts text) has already happened by the time we get here.
-    if (key.ctrl && ch === 'v') {
-      void (async () => {
-        const r = await captureClipboardImage();
-        if (r.ok) {
-          chatClient.client.attachImage(r.path);
-          appendHistory({ role: 'system', text: `attached image: ${r.path} (sends with next message)` });
-        }
-        // silent on failure — text paste path already covered the user
-      })();
+    // Ctrl+V: many terminals (Windows Terminal, iTerm2 with default config)
+    // intercept Ctrl+V at the application layer for "paste" and never forward
+    // it to stdin — so this useInput branch only fires on terminals that DO
+    // forward it. The raw-stdin listener below catches the 0x16 byte directly
+    // for terminals that send the chord. Ctrl+P is also wired as a guaranteed
+    // fallback chord no terminal binds.
+    if ((key.ctrl && ch === 'v') || (key.ctrl && ch === 'p')) {
+      void tryPasteImage();
       return;
     }
     if (key.ctrl && ch === 'o') {
