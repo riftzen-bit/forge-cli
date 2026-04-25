@@ -1,48 +1,53 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../ui/theme.js';
+import { G } from '../ui/glyphs.js';
+
+// Compact two-column tips card. Half the vertical footprint of the old
+// double-section (examples + shortcuts) panel — keeps the prompt closer
+// to the top of the viewport on first launch.
 
 const EXAMPLES = [
-  'read src/server.ts and add a request-id middleware',
+  'add request-id middleware to src/server.ts',
   'run the tests and fix the first failure',
-  'build a react+vite todo app with tests',
+  'scaffold a react+vite todo app with tests',
 ];
 
-const SHORTCUTS: { keys: string; hint: string }[] = [
-  { keys: 'ctrl+v',    hint: 'paste image from clipboard (ctrl+p if terminal swallows ctrl+v)' },
-  { keys: 'ctrl+x',    hint: 'clear pending image attachments' },
-  { keys: '@<path>',   hint: 'attach a file by mention' },
-  { keys: '!<cmd>',    hint: 'run a shell command' },
-  { keys: 'shift+tab', hint: 'cycle permission mode' },
+const SHORTCUTS: Array<[string, string]> = [
+  ['/',          'commands'],
+  ['@<path>',    'attach file'],
+  ['!<cmd>',     'shell'],
+  ['ctrl+v',     'paste image'],
+  ['ctrl+o',     'verbose'],
+  ['shift+tab',  'mode'],
 ];
 
 export function Tips() {
   const t = getTheme();
   return (
-    <Box
-      flexDirection="column"
-      marginBottom={1}
-      borderStyle="round"
-      borderColor={t.borderIdle}
-      paddingX={2}
-      paddingY={0}
-    >
-      <Text color={t.warn} bold>examples</Text>
-      {EXAMPLES.map((ex, i) => (
-        <Box key={`ex-${i}`}>
-          <Text color={t.accent}>{'> '}</Text>
-          <Text color={t.text}>{ex}</Text>
-        </Box>
-      ))}
-      <Box marginTop={1}>
-        <Text color={t.info} bold>shortcuts</Text>
+    <Box flexDirection="column" marginBottom={1} paddingX={1}>
+      <Box>
+        <Text color={t.warn} bold>{G.star} try </Text>
+        <Text color={t.muted}>{G.bullet} </Text>
+        <Text color={t.text}>{EXAMPLES[0]}</Text>
       </Box>
-      {SHORTCUTS.map((s, i) => (
-        <Box key={`sc-${i}`}>
-          <Text color={t.accent} bold>{s.keys.padEnd(12)}</Text>
-          <Text color={t.muted}>{s.hint}</Text>
-        </Box>
-      ))}
+      <Box paddingLeft={2}>
+        <Text color={t.muted}>{G.branch}{G.hr} </Text>
+        <Text color={t.text} dimColor>{EXAMPLES[1]}</Text>
+      </Box>
+      <Box paddingLeft={2}>
+        <Text color={t.muted}>{G.branchEnd}{G.hr} </Text>
+        <Text color={t.text} dimColor>{EXAMPLES[2]}</Text>
+      </Box>
+      <Box marginTop={1} flexWrap="wrap">
+        {SHORTCUTS.map(([k, v], i) => (
+          <Box key={i}>
+            <Text color={t.accent} bold>{k}</Text>
+            <Text color={t.muted}> {v}</Text>
+            {i < SHORTCUTS.length - 1 && <Text color={t.borderIdle}>  {G.bullet}  </Text>}
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 }

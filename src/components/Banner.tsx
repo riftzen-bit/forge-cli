@@ -1,55 +1,39 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../ui/theme.js';
-
-const LOGO = [
-  '  ███████╗ ██████╗ ██████╗  ██████╗ ███████╗',
-  '  ██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝',
-  '  █████╗  ██║   ██║██████╔╝██║  ███╗█████╗  ',
-  '  ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  ',
-  '  ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗',
-  '  ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝',
-];
+import { G } from '../ui/glyphs.js';
 
 type Props = { cwd?: string; version?: string };
 
+// Slim editorial header. Replaces the six-line block-ASCII logo with a
+// single accent line + a thin separator rule. Saves vertical space on
+// small terminals (Tips already eats five lines below) and reads as
+// "designed" rather than "phpBB 2003".
 export function Banner({ cwd, version = '0.1' }: Props) {
   const t = getTheme();
   const path = shortenCwd(cwd ?? '');
+  const rule = ruleLine();
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Box
-        borderStyle="round"
-        borderColor={t.accent}
-        paddingX={2}
-        paddingY={0}
-        flexDirection="column"
-      >
-        {LOGO.map((line, i) => (
-          <Text key={i} color={t.accent} bold>{line}</Text>
-        ))}
-        <Box marginTop={1}>
-          <Text color={t.accentDim}>  terminal coding agent</Text>
-          <Text color={t.muted}>   v{version}</Text>
-          <Text color={t.muted}>   {path}</Text>
-        </Box>
+      <Box>
+        <Text color={t.accent} bold>{G.star} </Text>
+        <Text color={t.accent} bold>forge</Text>
+        <Text color={t.muted}>  {G.bullet}  </Text>
+        <Text color={t.accentDim}>terminal coding agent</Text>
+        <Text color={t.muted}>  {G.bullet}  </Text>
+        <Text color={t.muted}>v{version}</Text>
       </Box>
-      <Box marginTop={1} paddingX={1} flexWrap="wrap">
-        <Text color={t.muted}>type </Text>
-        <Text color={t.accent} bold>/</Text>
-        <Text color={t.muted}> for commands  </Text>
-        <Text color={t.muted}>|  </Text>
-        <Text color={t.accent} bold>ctrl+v</Text>
-        <Text color={t.muted}> paste image  </Text>
-        <Text color={t.muted}>|  </Text>
-        <Text color={t.accent} bold>ctrl+o</Text>
-        <Text color={t.muted}> details  </Text>
-        <Text color={t.muted}>|  </Text>
-        <Text color={t.accent} bold>ctrl+c</Text>
-        <Text color={t.muted}> quit</Text>
+      <Text color={t.borderIdle}>{rule}</Text>
+      <Box>
+        <Text color={t.muted}>{path}</Text>
       </Box>
     </Box>
   );
+}
+
+function ruleLine(): string {
+  const w = Math.min(72, (process.stdout.columns ?? 80) - 2);
+  return G.hr.repeat(Math.max(20, w));
 }
 
 function shortenCwd(cwd: string): string {

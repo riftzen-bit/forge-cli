@@ -7,6 +7,7 @@ import { authBadge } from '../auth/status.js';
 import { getTheme } from '../ui/theme.js';
 import { providerFor } from '../agent/providers.js';
 import type { PermissionMode } from '../config/settings.js';
+import { G, BLOCK_FILL } from '../ui/glyphs.js';
 
 type Props = {
   model: string;
@@ -20,11 +21,11 @@ type Props = {
   template?: string;
 };
 
-function modeBadge(mode: PermissionMode | undefined): { label: string; colorKey: 'accent' | 'modePlan' | 'modeYolo' | 'modeAutoAccept' } {
-  if (mode === 'plan')       return { label: '-- PLAN --',        colorKey: 'modePlan' };
-  if (mode === 'yolo')       return { label: '-- YOLO --',        colorKey: 'modeYolo' };
-  if (mode === 'autoAccept') return { label: '-- AUTO-ACCEPT --', colorKey: 'modeAutoAccept' };
-  return { label: '-- READY --', colorKey: 'accent' };
+function modeBadge(mode: PermissionMode | undefined): { icon: string; label: string; colorKey: 'accent' | 'modePlan' | 'modeYolo' | 'modeAutoAccept' } {
+  if (mode === 'plan')       return { icon: G.diamondHollow, label: 'plan',     colorKey: 'modePlan' };
+  if (mode === 'yolo')       return { icon: G.hexagon,       label: 'yolo',     colorKey: 'modeYolo' };
+  if (mode === 'autoAccept') return { icon: G.squareDotted,  label: 'auto',     colorKey: 'modeAutoAccept' };
+  return { icon: G.star, label: 'ready', colorKey: 'accent' };
 }
 
 export function renderTemplate(template: string, vars: Record<string, string>): string {
@@ -41,10 +42,22 @@ function shortCwd(cwd: string): string {
   return s.length > 40 ? '...' + s.slice(-39) : s;
 }
 
+// Eight-step block fill ladder gives a smoother bar than '#'/'.' at the
+// same column count. Each cell can render any of nine fill levels via
+// the BLOCK_FILL ladder (0–8 eighths), so a 10-cell bar resolves 80
+// distinct positions instead of 11.
 function bucket(total: number, limit: number, width = 10): string {
-  const pct = Math.min(1, total / limit);
-  const filled = Math.round(pct * width);
-  return '#'.repeat(filled) + '.'.repeat(width - filled);
+  const pct = Math.max(0, Math.min(1, total / limit));
+  const totalEighths = Math.round(pct * width * 8);
+  const fullCells = Math.floor(totalEighths / 8);
+  const partial = totalEighths % 8;
+  const cells: string[] = [];
+  for (let i = 0; i < width; i++) {
+    if (i < fullCells) cells.push(BLOCK_FILL[8]!);
+    else if (i === fullCells && partial > 0) cells.push(BLOCK_FILL[partial]!);
+    else cells.push(BLOCK_FILL[0]!);
+  }
+  return cells.join('');
 }
 
 function formatTokens(n: number): string {
@@ -94,31 +107,30 @@ function _StatusBar({ model, effort, auth, cwd, provider, permissionMode, tokens
     );
   }
 
-  const modeLabel = badge_.label;
   const modeColor = t[badge_.colorKey];
   const bar = tokens !== undefined && limit ? bucket(tokens, limit) : undefined;
+  const sep = `  ${G.bullet}  `;
 
   return (
     <Box>
       <Text wrap="truncate-end">
-        <Text color={modeColor} bold>{modeLabel}</Text>
-        <Text color={t.muted}>  </Text>
+        <Text color={modeColor} bold>{badge_.icon} {badge_.label}</Text>
+        <Text color={t.borderIdle}>{sep}</Text>
         <Text color={t.accent}>{labelFor(model)}</Text>
-        {providerLabel && <Text color={t.muted}>@</Text>}
-        {providerLabel && <Text color={t.info}>{providerLabel}</Text>}
-        <Text color={t.muted}>  </Text>
+        {providerLabel && <Text color={t.muted}>@{providerLabel}</Text>}
+        <Text color={t.borderIdle}>{sep}</Text>
         <Text color={t.info}>{effort}</Text>
-        <Text color={t.muted}>  </Text>
         {bar && (
           <>
-            <Text color={ctxColor}>[{bar}]</Text>
+            <Text color={t.borderIdle}>{sep}</Text>
+            <Text color={ctxColor}>{bar}</Text>
             <Text color={ctxColor}> {ctxLabel}</Text>
-            {pct !== undefined && <Text color={t.muted}> ({pct}%)</Text>}
-            <Text color={t.muted}>  </Text>
+            {pct !== undefined && <Text color={t.muted}> {pct}%</Text>}
           </>
         )}
+        <Text color={t.borderIdle}>{sep}</Text>
         <Text color={badge.color === 'green' ? t.success : t.error}>{badge.label}</Text>
-        <Text color={t.muted}>  </Text>
+        <Text color={t.borderIdle}>{sep}</Text>
         <Text color={t.muted}>{cwdShort}</Text>
       </Text>
     </Box>
