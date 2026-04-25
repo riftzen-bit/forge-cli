@@ -10,4 +10,5 @@ dist
 IMPLEMENTATION_PLAN.md
 .claude/
 .tmp*
+nul
 

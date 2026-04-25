@@ -5,7 +5,7 @@
 //   Yes (allow session) — allow + persist to <cwd>/.forge/permissions.json
 //   No                — deny + interrupt the agent turn
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getTheme } from '../ui/theme.js';
 
@@ -44,12 +44,30 @@ function summarize(tool: string, input: Record<string, unknown>): string {
 export function PermissionPrompt({ tool, input, onPick }: Props) {
   const t = getTheme();
   const [idx, setIdx] = useState(0);
+  // Swallow stray Enter/Esc that arrive in the same tick the modal mounts:
+  // user-submit keystrokes that triggered the underlying tool call can be
+  // re-dispatched into the modal as `key.escape` (Windows terminals emit
+  // "\n\x1b" for some Enter combinations) and instantly auto-deny the
+  // permission. Same race the AskUserQuestion modal hits. Navigation keys
+  // are still processed during the grace window — they're harmless.
+  const mountedAtRef = useRef(Date.now());
+  useEffect(() => {
+    mountedAtRef.current = Date.now();
+  }, []);
+  const isInGrace = (): boolean => Date.now() - mountedAtRef.current < 250;
 
   useInput((_, key) => {
     if (key.upArrow)   setIdx((i) => (i - 1 + CHOICES.length) % CHOICES.length);
     if (key.downArrow) setIdx((i) => (i + 1) % CHOICES.length);
-    if (key.return)    onPick(CHOICES[idx]!.key);
-    if (key.escape)    onPick('no');
+    if (key.return) {
+      if (isInGrace()) return;
+      onPick(CHOICES[idx]!.key);
+      return;
+    }
+    if (key.escape) {
+      if (isInGrace()) return;
+      onPick('no');
+    }
   });
 
   const summary = summarize(tool, input);

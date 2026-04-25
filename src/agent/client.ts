@@ -2,8 +2,8 @@ import { query, type Options, type CanUseTool } from '@anthropic-ai/claude-agent
 import { isAbsolute, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { loadToken, loadProviderKey } from '../config/tokenStore.js';
-import { resolveModel, apiIdFor } from './models.js';
-import { buildSystemPrompt, PARTIAL_COMPACTION } from '../prompts/index.js';
+import { resolveModel, apiIdFor, usesOneMillionContext } from './models.js';
+import { buildSystemPrompt, buildSubagentPrompt, PARTIAL_COMPACTION } from '../prompts/index.js';
 import { budgetFor, type Effort } from './effort.js';
 import { FileCoordinator, lockKeyFor, type Release } from './fileLocks.js';
 import { estimateTokens, contextStateFor, compactThresholdFor } from './contextBudget.js';
@@ -13,6 +13,8 @@ import { matchRule } from './permissions.js';
 import { runHooks } from './hooks.js';
 import { DEFAULT_PROVIDER, providerFor, type ProviderId } from './providers.js';
 import { shouldPrompt } from '../config/projectPermissions.js';
+import { classifyError } from './errorClassify.js';
+import type { AskRequester, AskQuestion } from './askUser.js';
 
 export type PermissionDecision = 'yes' | 'yesSession' | 'no';
 export type PermissionRequest = {
@@ -98,6 +100,7 @@ export class AgentClient {
   private toolStartedAt = new Map<string, number>();
   private permissionMode: PermissionMode;
   private requester: PermissionRequester | undefined;
+  private askRequester: AskRequester | undefined;
   private tokenTotal = 0;
   private warned = false;
   private permissionRules: PermissionRule[];
@@ -226,6 +229,10 @@ export class AgentClient {
     this.requester = fn;
   }
 
+  setAskRequester(fn: AskRequester | undefined): void {
+    this.askRequester = fn;
+  }
+
   // Backward-compat shims so older call sites keep working until we
   // finish migrating every caller to setPermissionMode.
   setPlanMode(on: boolean): void {
@@ -331,21 +338,38 @@ export class AgentClient {
 
   private buildCanUseTool(): CanUseTool | undefined {
     const locks = this.locks;
-    // Always build canUseTool when any of these is true at call time:
-    // - permissionMode is autoAccept (prompt needed)
-    // - rules exist (may deny)
-    // - pre-hooks exist
-    // - file locks configured
-    // We read permissionMode live at invocation time (not capture it here)
-    // so a mid-turn mode switch via Shift+Tab takes effect on the next
-    // tool call in the same turn.
-    const hasRules = this.permissionRules.length > 0;
     const hasPreHooks = this.hooks.preTool.length > 0;
-    // We always want canUseTool wired so the read-before-edit gate runs.
-    // The early-return is gone — building the canUseTool is cheap.
-    void hasRules; void hasPreHooks; void locks;
-
+    // canUseTool is always wired so the read-before-edit gate runs.
+    // permissionMode is read live at invocation time (not captured in
+    // closure) so a mid-turn mode switch via Shift+Tab takes effect on
+    // the next tool call in the same turn.
     return async (toolName, input, opts) => {
+      // AskUserQuestion intercept. The SDK has a built-in tool with a
+      // strict input schema; the host (us) is expected to populate
+      // updatedInput.answers via this canUseTool callback. Show the UI,
+      // collect answers, return them. The SDK then formats the result
+      // text for the model on its own.
+      if (toolName === 'AskUserQuestion') {
+        if (!this.askRequester) {
+          return { behavior: 'deny', message: 'AskUserQuestion is unavailable: no UI is attached.' };
+        }
+        const questions = (input as { questions?: AskQuestion[] }).questions ?? [];
+        const resp = await this.askRequester(questions);
+        if (resp.cancelled) {
+          return { behavior: 'deny', message: 'User dismissed the question.' };
+        }
+        return {
+          behavior: 'allow',
+          updatedInput: { ...(input as Record<string, unknown>), answers: resp.answers },
+        };
+      }
+
+      // Yolo bypasses all remaining gates — preserves previous behavior
+      // where canUseTool was not registered at all in yolo mode.
+      if (this.permissionMode === 'yolo') {
+        return { behavior: 'allow', updatedInput: input };
+      }
+
       // Read-before-edit gate. SDK enforces this internally with a terse
       // error; we surface a clearer nudge so the model retries with Read.
       // We also mark the path as read on successful Edit/Write so the
@@ -457,14 +481,24 @@ export class AgentClient {
     } else {
       delete env.ANTHROPIC_BASE_URL;
     }
+    // SDK MCP tools (AskUserQuestion, spawn_agent, spawn_parallel) can run
+    // longer than the SDK's 60s default stream close timeout — a question
+    // the user hasn't answered yet, or a subagent doing research, would
+    // trip the timeout. Keep the user's explicit override if set; otherwise
+    // bump to 10 minutes which comfortably covers all of these.
+    if (env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT === undefined) {
+      env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT = '600000';
+    }
 
     const canUseTool = this.buildCanUseTool();
     const cwd = process.cwd();
     let systemPrompt: string;
     if (this.systemPromptOverride !== undefined) {
-      // Subagents pass a persona-only prompt here. We do not append the
-      // base prompt — the persona text intentionally replaces it.
-      systemPrompt = this.systemPromptOverride;
+      // Subagents pass a persona prompt. We compose it with a slim baseline
+      // (read-before-edit, verification, follow AGENTS.md) and inject the
+      // project/user memory + skill index so the subagent isn't a stateless
+      // box that refuses every task referencing project conventions.
+      systemPrompt = await buildSubagentPrompt(this.systemPromptOverride, cwd);
     } else {
       const promptCtx: Parameters<typeof buildSystemPrompt>[1] = {
         planMode: this.permissionMode === 'plan',
@@ -516,13 +550,22 @@ export class AgentClient {
     if (supportsThinking) {
       options.maxThinkingTokens = budgetFor(this.effort);
     }
+    // 1M context window is opt-in via a beta header. Without this flag the
+    // API silently caps the window at 200K even for the [1m] model variants,
+    // so a user who picked "Sonnet 4.6 (1M)" would be billed/limited as
+    // standard context. Only Anthropic-native paths accept the SDK `betas`
+    // field; OpenRouter et al. tunnel a different shape.
+    if (provider.nativeAnthropic && this.provider === DEFAULT_PROVIDER && usesOneMillionContext(this.model)) {
+      (options as Options & { betas?: string[] }).betas = ['context-1m-2025-08-07'];
+    }
     if (this.permissionMode === 'yolo') {
       // SDK requires this companion flag with bypassPermissions.
       (options as Options & { allowDangerouslySkipPermissions?: boolean }).allowDangerouslySkipPermissions = true;
     }
-    // canUseTool is dropped in yolo (SDK bypasses it anyway) but kept in
-    // every other mode so locks/hooks/rules/autoAccept-prompt still run.
-    if (canUseTool && this.permissionMode !== 'yolo') options.canUseTool = canUseTool;
+    // canUseTool is always wired so the AskUserQuestion intercept can
+    // collect answers from the host UI. In yolo the inner gates short-
+    // circuit to allow; in other modes locks/hooks/rules/autoAccept run.
+    if (canUseTool) options.canUseTool = canUseTool;
     if (Object.keys(this.mcpServers).length > 0) {
       options.mcpServers = this.mcpServers as unknown as Options['mcpServers'];
     }
@@ -584,10 +627,6 @@ export class AgentClient {
     cb.onTokens?.(this.tokenTotal);
 
     const options = await this.buildOptions();
-    this.abortController = new AbortController();
-    options.abortController = this.abortController;
-
-    const stream = query({ prompt: userText, options });
 
     let out = '';
     let sawRealUsage = this.sawRealUsage;
@@ -602,8 +641,20 @@ export class AgentClient {
     // event re-emits the same tool_use blocks at end-of-turn; skip them
     // to avoid duplicate onToolStart callbacks.
     const firedToolIds = new Set<string>();
+    // Retry only safe BEFORE any event arrives. Once we start receiving
+    // events the request is no longer idempotent (history mutations,
+    // tool calls, fired callbacks) so failure must surface to the user.
+    let receivedAny = false;
+    const MAX_ATTEMPTS = 3;
+    let attempt = 0;
+    streamLoop: while (true) {
+      attempt++;
+      this.abortController = new AbortController();
+      options.abortController = this.abortController;
+      const stream = query({ prompt: userText, options });
     try {
       for await (const event of stream) {
+        receivedAny = true;
         const sid = (event as { session_id?: string }).session_id;
         if (sid && sid !== this.lastSessionId) {
           this.lastSessionId = sid;
@@ -792,9 +843,22 @@ export class AgentClient {
         this.releaseAll();
         return '(cancelled)';
       }
+      // Retry transient errors only when no events have been processed
+      // yet. After the first event the call is no longer idempotent.
+      if (!receivedAny && attempt < MAX_ATTEMPTS) {
+        const c = classifyError(err);
+        if (c.retryable) {
+          this.releaseAll();
+          const delay = Math.min(8000, 500 * Math.pow(2, attempt - 1)) + Math.random() * 250;
+          await new Promise((r) => setTimeout(r, delay));
+          continue streamLoop;
+        }
+      }
       throw err;
     } finally {
       this.releaseAll();
+    }
+    break streamLoop;
     }
     this.abortController = undefined;
 

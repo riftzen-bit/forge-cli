@@ -145,11 +145,8 @@ export function makeSubmit(deps: Deps) {
         retry: deps.commands.handleRetry,
         mcp: deps.commands.handleMcp,
         openLoginPicker: (provider) => {
+          deps.setLoginInitialProvider?.(provider);
           deps.setPicker('login');
-          if (provider) {
-            // Provider hint is informational only — LoginPicker reads its
-            // own state. We just open it.
-          }
         },
         clearScreen: deps.commands.handleClearScreen,
       });

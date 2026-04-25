@@ -144,12 +144,12 @@ export function Markdown({ text, color }: { text: string; color?: string }) {
       {blocks.map((b, i) => {
         if (b.kind === 'heading') {
           const headColor = b.level === 1 ? t.accent : b.level === 2 ? t.info : t.toolTag;
+          // Drop the literal `#` markers — bold + colour already conveys the
+          // heading level. Raw `#` glyphs in rendered text read as "the LLM
+          // forgot to render its markdown" and add visual noise.
           return (
             <Box key={i} marginTop={i === 0 ? 0 : 1}>
-              <Text color={headColor} bold>
-                {b.level === 1 ? '# ' : b.level === 2 ? '## ' : '### '}
-                {b.text}
-              </Text>
+              <Text color={headColor} bold>{b.text}</Text>
             </Box>
           );
         }

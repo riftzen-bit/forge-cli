@@ -113,12 +113,30 @@ program.parseAsync(process.argv).catch(handleFatal);
 // lines escape becomes a harmless no-op at row 0. Chat history remains in
 // React state so the active session is unaffected; only terminal scrollback
 // of older frames is sacrificed.
+//
+// We also schedule a deferred clear-below (\x1B[J at row N+1, cursor not
+// moved) on a 60ms timer — long enough for React + Ink's resize-driven
+// redraw to settle. This kills the "endless black space" symptom on
+// Windows Terminal where Ink draws a shorter dynamic frame than the
+// previous one and leaves stale rows below.
 function patchInkResize(): () => void {
+  let pending: NodeJS.Timeout | undefined;
   const handler = () => {
     process.stdout.write('\x1B[H\x1B[2J\x1B[3J');
+    if (pending) clearTimeout(pending);
+    // 60ms is comfortably past Ink's React commit + log-update flush on
+    // every terminal we tested (Windows Terminal, iTerm2, Alacritty,
+    // gnome-terminal). Shorter and we race the redraw and clobber the
+    // new frame; longer and the dead rows linger long enough to be
+    // visible to the user before we wipe them.
+    pending = setTimeout(() => {
+      try { process.stdout.write('\x1B[J'); } catch { /* stdout closed */ }
+      pending = undefined;
+    }, 60);
   };
   process.stdout.prependListener('resize', handler);
   return () => {
     process.stdout.off('resize', handler);
+    if (pending) clearTimeout(pending);
   };
 }

@@ -13,6 +13,7 @@ const DISPLAY_NAME: Record<string, string> = {
   TodoWrite: 'TodoWrite',
   spawn_agent: 'Agent',
   spawn_parallel: 'Parallel',
+  AskUserQuestion: 'AskUserQuestion',
 };
 
 const PATH_ONLY = new Set(['Read', 'Write', 'Edit', 'NotebookRead', 'NotebookEdit']);
@@ -49,6 +50,41 @@ export function baseToolName(tool: string): string {
 export function displayName(tool: string): string {
   const base = baseToolName(tool);
   return DISPLAY_NAME[base] ?? base;
+}
+
+// Strip XML-ish error wrappers the Agent SDK emits around tool failures
+// (e.g. `<tool_use_error>...</tool_use_error>`) so the user sees a plain
+// human-readable line instead of raw markup. Also collapses interior tags
+// the SDK occasionally interleaves.
+export function sanitizeToolOutput(s: string): string {
+  if (!s) return s;
+  let out = s;
+  const wrap = out.match(/^\s*<tool_use_error>([\s\S]*?)<\/tool_use_error>\s*$/);
+  if (wrap) out = wrap[1]!;
+  // Strip any other angle-bracket tags the SDK may interleave.
+  out = out.replace(/<\/?(?:tool_use_error|system|tool)[^>]*>/g, '');
+  return out.trim();
+}
+
+// Tools whose visible args + stats already convey what happened. For these
+// we suppress the one-line success preview to keep the transcript scannable.
+// Bash, Grep, Glob, WebFetch, WebSearch keep their preview because the
+// output IS the artifact the user wants to see.
+const PREVIEW_HIDDEN_ON_OK = new Set([
+  'Read',
+  'Edit',
+  'Write',
+  'NotebookRead',
+  'NotebookEdit',
+  'TodoWrite',
+  'Task',
+  'spawn_agent',
+  'spawn_parallel',
+  'AskUserQuestion',
+]);
+
+export function shouldShowOkPreview(tool: string): boolean {
+  return !PREVIEW_HIDDEN_ON_OK.has(baseToolName(tool));
 }
 
 export type ToolMeta = { lines?: number };
@@ -120,6 +156,11 @@ export function prettyArgs(
   if (base === 'TodoWrite' && Array.isArray(input['todos'])) {
     const n = (input['todos'] as unknown[]).length;
     return `${n} item${n === 1 ? '' : 's'}`;
+  }
+
+  if (base === 'AskUserQuestion' && typeof input['question'] === 'string') {
+    const q = (input['question'] as string).replace(/\s+/g, ' ').trim();
+    return truncate(q, 80);
   }
 
   const first = Object.entries(input).find(

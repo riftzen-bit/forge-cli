@@ -45,7 +45,10 @@ function shortCwd(cwd: string): string {
 // Eight-step block fill ladder gives a smoother bar than '#'/'.' at the
 // same column count. Each cell can render any of nine fill levels via
 // the BLOCK_FILL ladder (0–8 eighths), so a 10-cell bar resolves 80
-// distinct positions instead of 11.
+// distinct positions instead of 11. Empty cells render as `░` (light
+// shade) instead of a literal space so the bar is still visible at 0%
+// — a row of leading spaces reads as broken padding, not a status bar.
+const EMPTY_CELL = '░';
 function bucket(total: number, limit: number, width = 10): string {
   const pct = Math.max(0, Math.min(1, total / limit));
   const totalEighths = Math.round(pct * width * 8);
@@ -55,7 +58,7 @@ function bucket(total: number, limit: number, width = 10): string {
   for (let i = 0; i < width; i++) {
     if (i < fullCells) cells.push(BLOCK_FILL[8]!);
     else if (i === fullCells && partial > 0) cells.push(BLOCK_FILL[partial]!);
-    else cells.push(BLOCK_FILL[0]!);
+    else cells.push(EMPTY_CELL);
   }
   return cells.join('');
 }
@@ -108,8 +111,61 @@ function _StatusBar({ model, effort, auth, cwd, provider, permissionMode, tokens
   }
 
   const modeColor = t[badge_.colorKey];
-  const bar = tokens !== undefined && limit ? bucket(tokens, limit) : undefined;
-  const sep = `  ${G.bullet}  `;
+  // 6 cells at wide mode is enough resolution for ctx pct without eating
+  // half the line. Narrow mode skips the bar entirely so width doesn't
+  // matter there.
+  const bar = tokens !== undefined && limit ? bucket(tokens, limit, 6) : undefined;
+  // Tighter than `  ·  ` — the status bar reads as a single chip strip,
+  // not five separate sentences. One space + bullet + one space.
+  const sep = ` ${G.bullet} `;
+  const cols = process.stdout.columns ?? 100;
+
+  // Narrow-terminal layout: at < 60 cols there is no room for cwd, provider
+  // tag, or the bar. Drop them and switch the ctx readout to a percentage.
+  // At < 80 cols, drop only the cwd + provider tag — the bar still fits.
+  // ≥ 80 cols renders the full status as before.
+  if (cols < 60) {
+    return (
+      <Box>
+        <Text wrap="truncate-end">
+          <Text color={t.inverse} backgroundColor={modeColor} bold>{` ${badge_.icon} ${badge_.label.toUpperCase()} `}</Text>
+          <Text color={t.borderIdle}>{sep}</Text>
+          <Text color={t.accent} bold>{labelFor(model)}</Text>
+          {pct !== undefined && (
+            <>
+              <Text color={t.borderIdle}>{sep}</Text>
+              <Text color={ctxColor}>{pct}%</Text>
+            </>
+          )}
+          <Text color={t.borderIdle}>{sep}</Text>
+          <Text color={badge.color === 'green' ? t.success : t.error}>{badge.color === 'green' ? G.toolOk : G.toolErr}</Text>
+        </Text>
+      </Box>
+    );
+  }
+
+  if (cols < 80) {
+    return (
+      <Box>
+        <Text wrap="truncate-end">
+          <Text color={t.inverse} backgroundColor={modeColor} bold>{` ${badge_.icon} ${badge_.label.toUpperCase()} `}</Text>
+          <Text color={t.borderIdle}>{sep}</Text>
+          <Text color={t.accent} bold>{labelFor(model)}</Text>
+          <Text color={t.borderIdle}>{sep}</Text>
+          <Text color={t.info}>{effort}</Text>
+          {bar && (
+            <>
+              <Text color={t.borderIdle}>{sep}</Text>
+              <Text color={ctxColor}>{bar}</Text>
+              {pct !== undefined && <Text color={t.muted}> {pct}%</Text>}
+            </>
+          )}
+          <Text color={t.borderIdle}>{sep}</Text>
+          <Text color={badge.color === 'green' ? t.success : t.error}>{badge.color === 'green' ? G.toolOk : G.toolErr}</Text>
+        </Text>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -127,11 +183,10 @@ function _StatusBar({ model, effort, auth, cwd, provider, permissionMode, tokens
             <Text color={t.borderIdle}>{sep}</Text>
             <Text color={ctxColor}>{bar}</Text>
             <Text color={ctxColor}> {ctxLabel}</Text>
-            {pct !== undefined && <Text color={t.muted}> {pct}%</Text>}
           </>
         )}
         <Text color={t.borderIdle}>{sep}</Text>
-        <Text color={badge.color === 'green' ? t.success : t.error}>{badge.color === 'green' ? G.toolOk : G.toolErr} {badge.label}</Text>
+        <Text color={badge.color === 'green' ? t.success : t.error}>{badge.color === 'green' ? G.toolOk : G.toolErr}</Text>
         <Text color={t.borderIdle}>{sep}</Text>
         <Text color={t.muted}>{cwdShort}</Text>
       </Text>

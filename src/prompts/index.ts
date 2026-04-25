@@ -19,6 +19,7 @@
 // stable, and situational pieces are loaded only when the situation fires.
 
 import { loadMemoryFiles, formatMemoryPrompt } from '../memory/loader.js';
+import { loadSkillIndex, formatSkillIndex } from '../memory/skills.js';
 import {
   CORE_IDENTITY,
   SECURITY_HEADER,
@@ -116,6 +117,12 @@ export async function buildSystemPrompt(
     parts.push('', '# Situational guidance', '', extras);
   }
 
+  const skills = await loadSkillIndex({ cwd });
+  const skillBlock = formatSkillIndex(skills);
+  if (skillBlock) {
+    parts.push('', skillBlock);
+  }
+
   const files = await loadMemoryFiles({ cwd });
   const memoryBlock = formatMemoryPrompt(files);
   if (memoryBlock) {
@@ -124,6 +131,43 @@ export async function buildSystemPrompt(
 
   return parts.join('\n');
 }
+
+// Compose a subagent system prompt: persona on top, then a slim baseline
+// (so the subagent inherits read-before-edit, code-quality, executing-care
+// rules), then the project + user memory and skill index. Without this, a
+// subagent is a stateless box that only sees the persona — no AGENTS.md, no
+// CLAUDE.md, no skills — and routinely refuses or guesses when the task
+// references project conventions it can't see.
+export async function buildSubagentPrompt(
+  persona: string,
+  cwd: string = process.cwd(),
+): Promise<string> {
+  const parts: string[] = [persona];
+  parts.push('', SUBAGENT_BASELINE);
+  const skills = await loadSkillIndex({ cwd });
+  const skillBlock = formatSkillIndex(skills);
+  if (skillBlock) parts.push('', skillBlock);
+  const files = await loadMemoryFiles({ cwd });
+  const memoryBlock = formatMemoryPrompt(files);
+  if (memoryBlock) {
+    parts.push('', '# Project and user instructions', '', memoryBlock);
+  }
+  return parts.join('\n');
+}
+
+// Slim version of the main agent's discipline rules. Subagents already have
+// a focused persona; we only need to back-stop them with the universal
+// "don't add error handling for impossible scenarios", "Read before Edit",
+// "verify before claiming done", "follow AGENTS.md" rules.
+const SUBAGENT_BASELINE = `# Baseline rules (apply on every turn)
+
+- Treat the persona above as your role. The rules below are constraints, not your identity.
+- Read every file before editing it. Edits to un-Read files are rejected by the sandbox.
+- Default to the smallest correct change. Don't refactor adjacent code, don't add speculative options, don't add error handling for scenarios that can't happen.
+- Don't claim "done" without running available checks (typecheck / tests / lint / build) and reading their output. If a check can't be run, say so explicitly.
+- Follow every rule in the project / user instructions block at the bottom of this prompt. Those override your defaults.
+- If a skill listed above clearly applies, Read its SKILL.md and follow it. Don't try to reconstruct the skill from the catalog description.
+- If the task is genuinely impossible or unsafe, say so plainly with a one-line reason. Don't refuse out of generic caution when the task is normal coding work.`;
 
 // Subagent personas — loaded when a subagent of that type is spawned.
 export {

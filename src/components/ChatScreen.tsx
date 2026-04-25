@@ -23,6 +23,7 @@ import { ProviderSelector } from './ProviderSelector.js';
 import { StatusBar } from './StatusBar.js';
 import { TodoList } from './TodoList.js';
 import { PermissionPrompt, type PermissionChoice } from './PermissionPrompt.js';
+import { AskQuestionPrompt } from './AskQuestionPrompt.js';
 import type { ChatMessage } from './MessageList.js';
 
 import { ActiveToolsPanel } from './chat/ActiveToolsPanel.js';
@@ -56,6 +57,7 @@ import { DEFAULT_PROVIDER } from '../agent/providers.js';
 import { listProviderKeys } from '../config/tokenStore.js';
 import { InputHistory } from '../agent/inputHistory.js';
 import type { PermissionRequest } from '../agent/client.js';
+import type { AskAnswer, AskQuestion } from '../agent/askUser.js';
 import { captureClipboardImage } from '../agent/clipboard.js';
 import { LoginPicker } from './LoginPicker.js';
 import { G } from '../ui/glyphs.js';
@@ -74,7 +76,6 @@ type Props = {
 export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit, onRequestOAuth }: Props) {
   const { exit } = useApp();
   const t = getTheme();
-
   // --- UI state ---
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<ChatMessage[]>([]);
@@ -100,6 +101,13 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   const permissionQueueRef = useRef<
     Array<PermissionRequest & { resolve: (c: PermissionChoice) => void }>
   >([]);
+  // AskUserQuestion modal: same queueing pattern as permissions so two
+  // back-to-back tool calls don't drop the second prompt and deadlock the
+  // SDK's awaiting promise.
+  type PendingAsk = { questions: AskQuestion[]; resolve: (a: AskAnswer) => void; _id: number };
+  const [pendingAsk, setPendingAsk] = useState<PendingAsk | undefined>(undefined);
+  const askQueueRef = useRef<PendingAsk[]>([]);
+  const askIdRef = useRef(0);
   const [renderEpoch, setRenderEpoch] = useState(0);
   const [queue, setQueue] = useState<string[]>([]);
   const [activeProvider, setActiveProvider] = useState<string>(
@@ -231,6 +239,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     setCursor,
     setHistory,
     setPicker,
+    setLoginInitialProvider,
     setQueue,
     bumpAttachmentTick: () => setAttachmentTick((n) => n + 1),
     busyRef,
@@ -387,6 +396,8 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   useInput((ch, key) => {
     // Permission prompt is modal — its own useInput handles arrows/enter.
     if (pendingPermission) return;
+    // AskUserQuestion modal owns its own keys too.
+    if (pendingAsk) return;
     if (picker !== 'none') return;
     // Shift+Tab cycles permission mode regardless of busy state, so users
     // can flip into Plan or YOLO mid-turn (next tool call picks it up).
@@ -480,6 +491,42 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   useEffect(() => {
     pendingPermissionRef.current = pendingPermission;
   }, [pendingPermission]);
+
+  // Same trick for the AskUserQuestion prompt — unmount must resolve any
+  // in-flight ask Promise with cancelled:true so the in-process MCP tool
+  // doesn't hang the SDK forever waiting for a UI that no longer exists.
+  const pendingAskRef = useRef(pendingAsk);
+  useEffect(() => {
+    pendingAskRef.current = pendingAsk;
+  }, [pendingAsk]);
+
+  useEffect(() => {
+    chatClient.setAskRequester((questions) => {
+      return new Promise<AskAnswer>((resolve) => {
+        askIdRef.current += 1;
+        const entry: PendingAsk = { questions, resolve, _id: askIdRef.current };
+        setPendingAsk((cur) => {
+          if (cur) {
+            askQueueRef.current.push(entry);
+            return cur;
+          }
+          return entry;
+        });
+      });
+    });
+    return () => {
+      chatClient.setAskRequester(undefined);
+      const p = pendingAskRef.current;
+      if (p) p.resolve({ answers: {}, cancelled: true });
+      for (const q of askQueueRef.current) q.resolve({ answers: {}, cancelled: true });
+      askQueueRef.current = [];
+    };
+    // setAskRequester is held in useState() inside useChatClient and is
+    // stable for the life of the chat session, so re-wiring on every
+    // render would only re-resolve in-flight asks as cancelled. Depend on
+    // the client (also stable) so the effect runs once at mount/unmount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatClient.client]);
 
   // Wire the permission requester once so the client sees state updates
   // through the setter closure. On unmount, clear the requester AND
@@ -604,6 +651,22 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         />
       )}
 
+      {pendingAsk && !pendingPermission && (() => {
+        const askProps: React.ComponentProps<typeof AskQuestionPrompt> = {
+          questions: pendingAsk.questions,
+          onAnswer: (answer) => {
+            const req = pendingAsk;
+            const next = askQueueRef.current.shift();
+            setPendingAsk(next);
+            req.resolve(answer);
+          },
+        };
+        // Key on the per-request id so the modal remounts (and its idx /
+        // picked / phase state resets) when the user finishes one ask and
+        // a queued one slides in.
+        return <AskQuestionPrompt key={`ask-${pendingAsk._id}`} {...askProps} />;
+      })()}
+
       {pendingPermission && (
         <PermissionPrompt
           tool={pendingPermission.tool}
@@ -639,7 +702,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         />
       )}
 
-      {!pendingPermission && picker === 'none' && (
+      {!pendingPermission && !pendingAsk && picker === 'none' && (
         <Box flexDirection="column">
           <TodoList todos={todos} />
           {tools.activeTools.length > 0 && (
@@ -712,13 +775,13 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
             />
             <Box flexWrap="wrap">
               <Text color={t.accentDim} bold>enter</Text>
-              <Text color={t.muted}> send  {G.bullet}  </Text>
+              <Text color={t.muted}> send {G.bullet} </Text>
               <Text color={t.accentDim} bold>/</Text>
-              <Text color={t.muted}> cmds  {G.bullet}  </Text>
+              <Text color={t.muted}> cmds {G.bullet} </Text>
               <Text color={t.accentDim} bold>ctrl+o</Text>
-              <Text color={t.muted}> details{verbose ? '*' : ''}  {G.bullet}  </Text>
+              <Text color={t.muted}> details{verbose ? '*' : ''} {G.bullet} </Text>
               <Text color={t.accentDim} bold>esc</Text>
-              <Text color={t.muted}> cancel  {G.bullet}  </Text>
+              <Text color={t.muted}> cancel {G.bullet} </Text>
               <Text color={t.accentDim} bold>ctrl+c</Text>
               <Text color={t.muted}> exit</Text>
             </Box>

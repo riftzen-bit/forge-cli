@@ -11,12 +11,13 @@ import { Box, Text, useInput } from 'ink';
 import { SimpleTextInput } from './SimpleTextInput.js';
 import { PROVIDERS, validateKey, type ProviderId } from '../agent/providers.js';
 import { saveProviderKey } from '../config/tokenStore.js';
-import { saveSettings } from '../config/settings.js';
+import { loadSettings, saveSettings } from '../config/settings.js';
 import { getTheme } from '../ui/theme.js';
 import { G } from '../ui/glyphs.js';
 
-type Phase = 'pick' | 'method' | 'baseurl' | 'key' | 'saving' | 'done' | 'error';
+type Phase = 'pick' | 'method' | 'ack' | 'baseurl' | 'key' | 'saving' | 'done' | 'error';
 type Method = 'oauth' | 'apikey';
+type AckChoice = 'continue' | 'cancel';
 
 type Props = {
   initialProvider?: string;
@@ -44,6 +45,7 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
     return p?.oauth ? 'method' : 'baseurl';
   });
   const [methodCursor, setMethodCursor] = useState(0);
+  const [ackCursor, setAckCursor] = useState<AckChoice>('cancel');
   const [baseURL, setBaseURL] = useState('');
   const [key, setKey] = useState('');
   const [message, setMessage] = useState('');
@@ -71,14 +73,23 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
   async function chooseMethod(): Promise<void> {
     const m = methodOptions[methodCursor]!;
     if (m.id === 'oauth') {
-      // Anthropic: exit Ink, run `claude setup-token`, restart. Persist
-      // activeProvider first so re-launch lands on anthropic — must await
-      // so the write is flushed before we tear down Ink and re-exec.
-      await saveSettings({ activeProvider: provider.id });
-      if (onRequestOAuth) onRequestOAuth();
+      // Show responsibility ack before any OAuth handoff. The user is
+      // signing into their own paid account; consequences (cost, ban,
+      // ToS) are theirs. Ack defaults to 'cancel' so an accidental
+      // Enter doesn't blow past the warning.
+      setAckCursor('cancel');
+      setPhase('ack');
       return;
     }
     startInputForKey();
+  }
+
+  async function ackContinue(): Promise<void> {
+    // Anthropic: exit Ink, run `claude setup-token`, restart. Persist
+    // activeProvider first so re-launch lands on anthropic — must await
+    // so the write is flushed before we tear down Ink and re-exec.
+    await saveSettings({ activeProvider: provider.id });
+    if (onRequestOAuth) onRequestOAuth();
   }
 
   // From the provider list, decide whether to show the method phase or
@@ -112,6 +123,29 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
         if (initialProvider) onCancel();
         else setPhase('pick');
       }
+      return;
+    }
+    if (phase === 'ack') {
+      if (k.upArrow || k.downArrow || k.tab || input === 'j' || input === 'k') {
+        setAckCursor((c) => (c === 'cancel' ? 'continue' : 'cancel'));
+        return;
+      }
+      if (input === 'y' || input === 'Y') {
+        setAckCursor('continue');
+        void ackContinue();
+        return;
+      }
+      if (input === 'n' || input === 'N') {
+        setAckCursor('cancel');
+        setPhase('method');
+        return;
+      }
+      if (k.return) {
+        if (ackCursor === 'continue') void ackContinue();
+        else setPhase('method');
+        return;
+      }
+      if (k.escape) setPhase('method');
       return;
     }
     if (phase === 'error' && (k.return || k.escape)) {
@@ -148,7 +182,15 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
       await saveProviderKey(provider.id as ProviderId, trimmed);
       const next: Parameters<typeof saveSettings>[0] = { activeProvider: provider.id };
       if (baseURL && baseURL !== provider.baseURL) {
-        next.providers = { [provider.id]: { baseURL } };
+        // Merge against existing providers so we don't wipe configs for
+        // every other provider the user has previously set up. saveSettings
+        // does a shallow top-level merge, so we must hand it a complete
+        // providers map.
+        const cur = await loadSettings();
+        next.providers = {
+          ...cur.providers,
+          [provider.id]: { ...cur.providers?.[provider.id], baseURL },
+        };
       }
       await saveSettings(next);
       setPhase('done');
@@ -219,6 +261,37 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
           </Box>
           <Box marginTop={1}>
             <Text color={t.muted}>enter to pick {G.bullet} esc to go back</Text>
+          </Box>
+        </Box>
+      )}
+
+      {phase === 'ack' && (
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
+          <Box>
+            <Text color={t.warn} bold>responsibility notice</Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={t.text}>You are about to sign into <Text color={t.accent} bold>{provider.label}</Text> with your own account.</Text>
+            <Text color={t.muted}>You — not Forge — are responsible for:</Text>
+            <Text color={t.muted}>  {G.bullet} cost or quota incurred against this account</Text>
+            <Text color={t.muted}>  {G.bullet} suspension, rate-limiting, or ban from the provider</Text>
+            <Text color={t.muted}>  {G.bullet} compliance with the provider's Terms of Service</Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            {(['continue', 'cancel'] as AckChoice[]).map((c) => {
+              const active = ackCursor === c;
+              const color = c === 'continue' ? t.success : t.muted;
+              const label = c === 'continue' ? 'Continue (y)' : 'Cancel (n)';
+              return (
+                <Box key={c}>
+                  <Text color={active ? color : t.muted} bold>{active ? `${G.prompt} ` : '  '}</Text>
+                  <Text color={active ? color : t.text} bold={active}>{label}</Text>
+                </Box>
+              );
+            })}
+          </Box>
+          <Box marginTop={1}>
+            <Text color={t.muted}>up/dn or tab to switch {G.bullet} y/n to pick {G.bullet} esc to go back</Text>
           </Box>
         </Box>
       )}

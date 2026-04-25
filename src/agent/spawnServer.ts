@@ -91,10 +91,18 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
     },
     async (args) => {
       const tag = nextTag();
-      const reply = await runTyped(args.task, tag, args.subagent_type);
-      return {
-        content: [{ type: 'text', text: `[${tag}] ${reply}` }],
-      };
+      try {
+        const reply = await runTyped(args.task, tag, args.subagent_type);
+        return {
+          content: [{ type: 'text', text: `[${tag}] ${reply}` }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `[${tag}] error: ${msg}` }],
+        };
+      }
     },
   );
 

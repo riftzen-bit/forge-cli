@@ -124,5 +124,9 @@ export function shouldPrompt(tool: string): boolean {
   if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') return false;
   if (tool === 'TodoWrite') return false;
   if (tool === 'NotebookRead') return false;
+  // AskUserQuestion drives its own modal — gating it on a separate
+  // permission prompt would double-block the user and serves no purpose
+  // (it has no side effect beyond rendering UI).
+  if (tool === 'mcp__forge-ask__AskUserQuestion') return false;
   return true;
 }

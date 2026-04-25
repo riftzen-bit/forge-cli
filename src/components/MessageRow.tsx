@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import { Diff, computeDiffStats } from './Diff.js';
 import type { ChatMessage } from './MessageList.js';
 import { getTheme } from '../ui/theme.js';
-import { baseToolName, displayName } from './toolFormat.js';
+import { baseToolName, displayName, sanitizeToolOutput, shouldShowOkPreview } from './toolFormat.js';
 import { Markdown } from './Markdown.js';
 import { G } from '../ui/glyphs.js';
 
@@ -54,9 +54,18 @@ function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+// Tool-row durations skip sub-second timings entirely — those are noise in
+// the transcript. Shell rows keep ms because the user invoked the command
+// and wants concrete feedback even on fast commands.
+function formatToolMs(ms: number): string {
+  if (ms < 1000) return '';
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 // Strip leading `N->` line-number gutter that Read emits, and truncate to 1 line.
 function cleanPreview(s: string): string {
-  const first = s.split(/\r?\n/, 1)[0] ?? '';
+  const sanitized = sanitizeToolOutput(s);
+  const first = sanitized.split(/\r?\n/, 1)[0] ?? '';
   const stripped = first.replace(/^\s*\d+\s*(?:→|->)\s*/, '');
   // Truncate by code points so the slice can't split a surrogate pair
   // (which would render as a replacement glyph).
@@ -142,14 +151,18 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     let stats = '';
     if (diff && base === 'Edit') {
       const { adds, dels } = computeDiffStats(diff.old, diff.next);
-      stats = ` +${adds} -${dels}`;
+      stats = `+${adds} -${dels}`;
     } else if (diff && base === 'Write') {
       const { adds } = computeDiffStats(diff.old, diff.next);
-      stats = ` +${adds}`;
+      stats = `+${adds}`;
     }
 
     const args = m.text ?? '';
-    const dur = m.ms !== undefined ? formatMs(m.ms) : '';
+    const dur = m.ms !== undefined ? formatToolMs(m.ms) : '';
+    // Suppress success preview for tools whose args/stats already convey
+    // what happened (Read/Edit/Write/Todos/etc). Bash/Grep/Glob/Web* keep
+    // the preview because the output IS the artifact the user wants to see.
+    const showOkPreview = m.status === 'ok' && m.output && !diff && (verbose || shouldShowOkPreview(m.tool));
 
     return (
       <Box flexDirection="column">
@@ -177,9 +190,9 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
             ))}
           </Box>
         )}
-        {m.status === 'ok' && m.output && !diff && (
+        {showOkPreview && (
           <Box paddingLeft={2}>
-            <Text color={t.muted}>{`  ${G.branchEnd} `}{cleanPreview(m.output)}</Text>
+            <Text color={t.muted}>{`  ${G.branchEnd} `}{cleanPreview(m.output!)}</Text>
           </Box>
         )}
         {m.status === 'err' && m.output && (

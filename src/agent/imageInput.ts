@@ -23,16 +23,25 @@ export async function extractDataUrlImages(text: string): Promise<{ text: string
   const saved: string[] = [];
   let rewritten = text;
   let i = 0;
+  // Dedup: the same data URL can appear multiple times in one prompt and
+  // String#replace(string,...) only swaps the first occurrence, leaving
+  // raw base64 of the duplicates in the prompt. Group writes per unique URL
+  // and use replaceAll so every occurrence is rewritten to the same path.
+  const seen = new Map<string, string>();
   for (const m of matches) {
+    if (seen.has(m.full)) continue;
     const ext = m.mime === 'jpg' ? 'jpeg' : m.mime;
     const out = join(clipDir(), `paste-${Date.now()}-${i++}.${ext}`);
     try {
       await writeFile(out, Buffer.from(m.b64, 'base64'));
       saved.push(out);
-      rewritten = rewritten.replace(m.full, `[image: ${out}]`);
+      seen.set(m.full, out);
     } catch {
       // skip on write failure
     }
+  }
+  for (const [full, out] of seen) {
+    rewritten = rewritten.replaceAll(full, `[image: ${out}]`);
   }
   return { text: rewritten, saved };
 }

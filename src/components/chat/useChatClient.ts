@@ -13,6 +13,7 @@ import { AgentClient, type ToolStartEvent, type ToolResultEvent } from '../../ag
 import { AgentPool } from '../../agent/pool.js';
 import { FileCoordinator } from '../../agent/fileLocks.js';
 import { createSpawnServer } from '../../agent/spawnServer.js';
+import type { AskRequester } from '../../agent/askUser.js';
 import { DEFAULT_EFFORT, type Effort } from '../../agent/effort.js';
 import { DEFAULT_PROVIDER } from '../../agent/providers.js';
 import type { ProviderConfig, Settings } from '../../config/settings.js';
@@ -45,6 +46,7 @@ export type ChatClientApi = {
   pool: AgentPool;
   client: AgentClient;
   spawnHandlersRef: MutableRefObject<SpawnHandlers>;
+  setAskRequester: (fn: AskRequester | undefined) => void;
 };
 
 export function useChatClient(deps: Deps): ChatClientApi {
@@ -118,11 +120,17 @@ export function useChatClient(deps: Deps): ChatClientApi {
       permissionRules: settings?.permissionRules,
       hooks: settings?.hooks,
       mcpServers: { ...(settings?.mcpServers ?? {}), ...spawn.servers },
-      extraAllowedTools: spawn.allowedTools,
+      extraAllowedTools: [...spawn.allowedTools],
       provider: initialProvider,
       providerConfig: settings?.providers?.[initialProvider] ?? {},
     });
   });
 
-  return { coordinator, pool, client, spawnHandlersRef };
+  return {
+    coordinator,
+    pool,
+    client,
+    spawnHandlersRef,
+    setAskRequester: (fn) => client.setAskRequester(fn),
+  };
 }

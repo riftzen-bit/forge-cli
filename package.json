@@ -18,7 +18,10 @@
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "link": "bun link",
+    "unlink": "bun unlink",
+    "install:global": "bun run build && bun link"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",

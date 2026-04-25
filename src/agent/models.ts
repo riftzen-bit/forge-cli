@@ -19,9 +19,9 @@ export const MODELS: ModelEntry[] = [
   { id: 'claude-haiku-4-5',       label: 'Haiku 4.5',      provider: 'anthropic', contextWindow: DEFAULT_CTX },
   { id: 'claude-sonnet-4-5',      label: 'Sonnet 4.5',     provider: 'anthropic', contextWindow: DEFAULT_CTX },
   { id: 'claude-sonnet-4-6',      label: 'Sonnet 4.6',     provider: 'anthropic', contextWindow: DEFAULT_CTX },
-  { id: 'claude-sonnet-4-6[1m]',  label: 'Sonnet 4.6 (1M)', provider: 'anthropic', contextWindow: MILLION_CTX },
+  { id: 'claude-sonnet-4-6[1m]',  label: 'Sonnet 4.6 (1M)', provider: 'anthropic', contextWindow: MILLION_CTX, apiId: 'claude-sonnet-4-6' },
   { id: 'claude-opus-4-7',        label: 'Opus 4.7',       provider: 'anthropic', contextWindow: DEFAULT_CTX },
-  { id: 'claude-opus-4-7[1m]',    label: 'Opus 4.7 (1M)',  provider: 'anthropic', contextWindow: MILLION_CTX },
+  { id: 'claude-opus-4-7[1m]',    label: 'Opus 4.7 (1M)',  provider: 'anthropic', contextWindow: MILLION_CTX, apiId: 'claude-opus-4-7' },
 
   { id: 'anthropic/claude-sonnet-4.5',      label: 'OR Sonnet 4.5',    provider: 'openrouter' },
   { id: 'anthropic/claude-opus-4.7',        label: 'OR Opus 4.7',      provider: 'openrouter' },
@@ -69,6 +69,17 @@ export function apiIdFor(idOrLabel: string): string {
   const resolved = resolveModel(idOrLabel);
   const entry = MODELS.find((m) => m.id === resolved);
   return entry?.apiId ?? resolved;
+}
+
+// True for the "[1m]" Anthropic variants. Caller adds the
+// `context-1m-2025-08-07` beta header so the API actually serves the 1M
+// window instead of silently capping at 200K.
+export function usesOneMillionContext(idOrLabel: string): boolean {
+  const resolved = resolveModel(idOrLabel);
+  const entry = MODELS.find((m) => m.id === resolved);
+  if (!entry) return resolved.includes('[1m]');
+  if (entry.provider !== 'anthropic') return false;
+  return entry.id.includes('[1m]');
 }
 
 export function labelFor(id: string): string {
