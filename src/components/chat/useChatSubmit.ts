@@ -202,6 +202,7 @@ export function makeSubmit(deps: Deps) {
       await deps.client.send(prompt, {
         onThinking: deps.handleThinking,
         onText: deps.handleText,
+        onTextBlockStart: deps.resetStreaming,
         onTextBlock: (text) => deps.flushStreaming(text),
         onToolStart: (ev) => deps.handleToolStart(ev),
         onToolResult: (r) => deps.handleToolResult(r),

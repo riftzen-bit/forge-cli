@@ -71,6 +71,10 @@ export type AgentTodo = {
 export type StreamCallbacks = {
   onThinking?: (delta: string) => void;
   onThinkingDone?: () => void;
+  // Fires once per assistant text block, BEFORE any text_delta arrives.
+  // Hooks reset their per-block streaming buffer so deltas from successive
+  // blocks (e.g. text → tool → text) don't concatenate into one preview.
+  onTextBlockStart?: () => void;
   onText?: (delta: string) => void;
   onTextBlock?: (text: string) => void;
   onToolStart?: (tool: ToolStartEvent) => void;
@@ -606,6 +610,11 @@ export class AgentClient {
           if (raw?.type === 'content_block_start' && typeof raw.index === 'number') {
             if (raw.content_block?.type === 'thinking') {
               thinkingBlockIndexes.add(raw.index);
+            } else if (raw.content_block?.type === 'text') {
+              // New text block — UI must reset its per-block streaming
+              // buffer or deltas from this block concatenate with the
+              // previous block's text in the live preview.
+              cb.onTextBlockStart?.();
             }
           } else if (raw?.type === 'content_block_delta' && raw.delta) {
             if (raw.delta.type === 'thinking_delta' && raw.delta.thinking) {
