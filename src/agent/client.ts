@@ -592,6 +592,16 @@ export class AgentClient {
     let out = '';
     let sawRealUsage = this.sawRealUsage;
     const thinkingBlockIndexes = new Set<number>();
+    // Per-stream tool_use buffers: index -> {id, name, jsonAccum}.
+    // Tool calls are emitted block-by-block in stream_event before the
+    // final assistant event. We fire onToolStart on content_block_stop
+    // (input JSON fully parsed) so the UI shows tools progressively
+    // instead of waiting for the whole assistant turn to complete.
+    const toolBlockBuffers = new Map<number, { id: string; name: string; jsonAccum: string }>();
+    // Tool ids already announced via the streaming path. The assistant
+    // event re-emits the same tool_use blocks at end-of-turn; skip them
+    // to avoid duplicate onToolStart callbacks.
+    const firedToolIds = new Set<string>();
     try {
       for await (const event of stream) {
         const sid = (event as { session_id?: string }).session_id;
@@ -604,8 +614,8 @@ export class AgentClient {
           const raw = (event as { event: unknown }).event as {
             type?: string;
             index?: number;
-            content_block?: { type?: string };
-            delta?: { type?: string; text?: string; thinking?: string };
+            content_block?: { type?: string; id?: string; name?: string };
+            delta?: { type?: string; text?: string; thinking?: string; partial_json?: string };
           };
           if (raw?.type === 'content_block_start' && typeof raw.index === 'number') {
             if (raw.content_block?.type === 'thinking') {
@@ -615,16 +625,66 @@ export class AgentClient {
               // buffer or deltas from this block concatenate with the
               // previous block's text in the live preview.
               cb.onTextBlockStart?.();
+            } else if (
+              raw.content_block?.type === 'tool_use' &&
+              typeof raw.content_block.id === 'string' &&
+              typeof raw.content_block.name === 'string'
+            ) {
+              toolBlockBuffers.set(raw.index, {
+                id: raw.content_block.id,
+                name: raw.content_block.name,
+                jsonAccum: '',
+              });
             }
           } else if (raw?.type === 'content_block_delta' && raw.delta) {
             if (raw.delta.type === 'thinking_delta' && raw.delta.thinking) {
               cb.onThinking?.(raw.delta.thinking);
             } else if (raw.delta.type === 'text_delta' && raw.delta.text) {
               cb.onText?.(raw.delta.text);
+            } else if (
+              raw.delta.type === 'input_json_delta' &&
+              typeof raw.delta.partial_json === 'string' &&
+              typeof raw.index === 'number'
+            ) {
+              const buf = toolBlockBuffers.get(raw.index);
+              if (buf) buf.jsonAccum += raw.delta.partial_json;
             }
           } else if (raw?.type === 'content_block_stop' && typeof raw.index === 'number') {
             if (thinkingBlockIndexes.delete(raw.index)) {
               cb.onThinkingDone?.();
+            }
+            const toolBuf = toolBlockBuffers.get(raw.index);
+            if (toolBuf) {
+              toolBlockBuffers.delete(raw.index);
+              let parsedInput: Record<string, unknown> = {};
+              try {
+                parsedInput = toolBuf.jsonAccum.trim()
+                  ? (JSON.parse(toolBuf.jsonAccum) as Record<string, unknown>)
+                  : {};
+              } catch {
+                // Partial / malformed JSON — leave parsedInput empty and
+                // let the assistant-event branch fire with the authoritative
+                // input by NOT marking this id as fired.
+                continue;
+              }
+              if (!firedToolIds.has(toolBuf.id)) {
+                firedToolIds.add(toolBuf.id);
+                this.toolStartedAt.set(toolBuf.id, Date.now());
+                const trackedPath = this.extractToolPath(toolBuf.name, parsedInput);
+                this.toolMeta.set(toolBuf.id, { name: toolBuf.name, path: trackedPath });
+                if (toolBuf.name === 'TodoWrite' && Array.isArray(parsedInput['todos'])) {
+                  cb.onTodos?.(parsedInput['todos'] as AgentTodo[]);
+                }
+                cb.onToolStart?.({ id: toolBuf.id, name: toolBuf.name, input: parsedInput });
+                if (this.hooks.postTool.length > 0) {
+                  void runHooks(this.hooks.postTool, {
+                    tool: toolBuf.name,
+                    input: parsedInput,
+                    cwd: process.cwd(),
+                    phase: 'post',
+                  });
+                }
+              }
             }
           }
           continue;
@@ -654,6 +714,9 @@ export class AgentClient {
             else if (block.type === 'tool_use') {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
               const id = (block as { id?: string }).id ?? `${Date.now()}-${Math.random()}`;
+              // Already fired progressively from stream_event — skip to
+              // avoid a duplicate onToolStart and a duplicate row in the UI.
+              if (firedToolIds.has(id)) continue;
               this.toolStartedAt.set(id, Date.now());
               const trackedPath = this.extractToolPath(block.name, toolInput);
               this.toolMeta.set(id, { name: block.name, path: trackedPath });
