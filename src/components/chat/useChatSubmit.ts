@@ -37,6 +37,8 @@ type Deps = {
   // Lifecycle
   beginBusy: () => void;
   endBusy: () => void;
+  // Attachments
+  bumpAttachmentTick?: () => void;
   // Stream handlers
   handleThinking: (delta: string) => void;
   handleText: (delta: string) => void;
@@ -167,6 +169,9 @@ export function makeSubmit(deps: Deps) {
     deps.sessionStatsRef.current.turns += 1;
     deps.setHistory((m) => [...m, { role: 'user', text: trimmed }]);
     deps.beginBusy();
+    // Pending attachments will be drained by client.send(); refresh the
+    // panel so the count drops to 0 immediately.
+    deps.bumpAttachmentTick?.();
 
     let prompt = trimmed;
     try {

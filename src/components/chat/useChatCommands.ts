@@ -72,7 +72,7 @@ export type ChatCommands = {
   handleTodo: (args: string) => string;
   handleMcp: (args: string) => Promise<string>;
   handleShell: (command: string) => Promise<void>;
-  handlePaste: () => Promise<string>;
+  handlePaste: (args: string) => Promise<string>;
 };
 
 export function useChatCommands(ctx: CommandCtx): ChatCommands {

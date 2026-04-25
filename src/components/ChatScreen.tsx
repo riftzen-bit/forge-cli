@@ -28,6 +28,7 @@ import type { ChatMessage } from './MessageList.js';
 import { ActiveToolsPanel } from './chat/ActiveToolsPanel.js';
 import { SubagentPanel } from './chat/SubagentPanel.js';
 import { StreamingPreview } from './chat/StreamingPreview.js';
+import { AttachmentsPanel } from './chat/AttachmentsPanel.js';
 import { useStreamState } from './chat/useStreamState.js';
 import { useActiveTools } from './chat/useActiveTools.js';
 import { useSessionStats } from './chat/useSessionStats.js';
@@ -98,6 +99,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   );
   const [providerKeys, setProviderKeys] = useState<Set<string>>(new Set());
   const [loginInitialProvider, setLoginInitialProvider] = useState<string | undefined>(undefined);
+  const [attachmentTick, setAttachmentTick] = useState(0);
 
   // --- Refs ---
   const busyRef = useRef(false);
@@ -193,6 +195,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     handleTokens: stats.handleTokens,
     providerKeys,
     refreshProviderKeys,
+    bumpAttachmentTick: () => setAttachmentTick((n) => n + 1),
     lastUserMsgRef,
     inputHistoryRef,
     submitRef,
@@ -221,6 +224,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     setHistory,
     setPicker,
     setQueue,
+    bumpAttachmentTick: () => setAttachmentTick((n) => n + 1),
     busyRef,
     queueRef,
     lastUserMsgRef,
@@ -320,10 +324,18 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     const r = await captureClipboardImage();
     if (r.ok) {
       chatClient.client.attachImage(r.path);
-      appendHistory({ role: 'system', text: `attached image: ${r.path} (sends with next message)` });
+      setAttachmentTick((n) => n + 1);
+      appendHistory({ role: 'system', text: `attached image: ${r.path} (clear: /paste clear or ctrl+x)` });
     } else if (!silent) {
       appendHistory({ role: 'system', text: `paste image failed: ${r.reason}` });
     }
+  }
+  function clearPendingAttachments(): void {
+    const n = chatClient.client.getAttachments().length;
+    if (n === 0) return;
+    chatClient.client.clearAttachments();
+    setAttachmentTick((t) => t + 1);
+    appendHistory({ role: 'system', text: `cleared ${n} attachment${n === 1 ? '' : 's'}` });
   }
 
   // Raw-stdin listener: catches Ctrl+V (byte 0x16) BEFORE Ink's parser, so
@@ -380,6 +392,11 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     // fallback chord no terminal binds.
     if ((key.ctrl && ch === 'v') || (key.ctrl && ch === 'p')) {
       void tryPasteImage();
+      return;
+    }
+    // Ctrl+X drops pending image attachments before they get sent.
+    if (key.ctrl && ch === 'x') {
+      clearPendingAttachments();
       return;
     }
     if (key.ctrl && ch === 'o') {
@@ -615,6 +632,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
           {busy && stream.streamingText && (
             <StreamingPreview text={stream.streamingText} verbose={verbose} />
           )}
+          <AttachmentsPanel client={chatClient.client} tick={attachmentTick} />
           {queue.length > 0 && (
             <Box flexDirection="column" marginTop={1}>
               <Box>

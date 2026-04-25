@@ -166,6 +166,20 @@ export class AgentClient {
     this.pendingAttachments.push({ path: filePath, kind: 'file' });
   }
 
+  getAttachments(): ReadonlyArray<{ path: string; kind: 'image' | 'file' }> {
+    return this.pendingAttachments;
+  }
+
+  clearAttachments(): void {
+    this.pendingAttachments = [];
+  }
+
+  removeAttachment(index: number): boolean {
+    if (index < 0 || index >= this.pendingAttachments.length) return false;
+    this.pendingAttachments.splice(index, 1);
+    return true;
+  }
+
   private normalizePath(p: unknown): string | undefined {
     if (typeof p !== 'string' || !p) return undefined;
     const abs = isAbsolute(p) ? p : resolve(process.cwd(), p);

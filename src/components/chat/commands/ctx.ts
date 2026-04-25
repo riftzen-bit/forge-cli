@@ -71,6 +71,7 @@ export type CommandCtx = {
   handleTokens: (total: number) => void;
   providerKeys: Set<string>;
   refreshProviderKeys: () => Promise<void>;
+  bumpAttachmentTick: () => void;
   lastUserMsgRef: MutableRefObject<string>;
   inputHistoryRef: MutableRefObject<InputHistory>;
   submitRef: MutableRefObject<(text: string) => Promise<void>>;

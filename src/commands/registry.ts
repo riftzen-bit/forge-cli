@@ -34,7 +34,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'memory', hint: 'list loaded project/user memory files' },
   { name: 'doctor', hint: 'environment diagnostics (bun, git, auth)' },
   { name: 'mcp', hint: 'list/add/rm MCP servers (live; no restart)', takesArg: true, usage: 'list | add <name> <cmd> | rm <name>' },
-  { name: 'paste', hint: 'attach clipboard image to next message' },
+  { name: 'paste', hint: 'attach clipboard image · /paste [list|clear|rm N]', takesArg: true, usage: '[list | clear | rm <n>]' },
   { name: 'login', hint: 'add/switch API key for a provider', takesArg: true, usage: '[provider]' },
   { name: 'compact', hint: 'summarize history now to free context' },
   { name: 'logout', hint: 'clear stored token' },
