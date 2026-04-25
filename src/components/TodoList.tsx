@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { Todo } from '../agent/todos.js';
 import { getTheme } from '../ui/theme.js';
+import { G } from '../ui/glyphs.js';
 
 type Props = { todos: Todo[] };
 
@@ -31,8 +32,8 @@ function TodoListImpl({ todos }: Props) {
       paddingX={1}
     >
       <Box>
-        <Text color={t.accent} bold>Todos</Text>
-        <Text color={t.muted}> · {done}/{total}</Text>
+        <Text color={t.accent} bold>{G.diamond} todos</Text>
+        <Text color={t.muted}>  {G.bullet}  {done}/{total}</Text>
       </Box>
       {todos.map((td) => (
         <Box key={td.id}>
@@ -53,9 +54,9 @@ function TodoListImpl({ todos }: Props) {
 }
 
 function mark(s: Todo['status']): string {
-  if (s === 'done') return '[x]';
-  if (s === 'doing') return '[>]';
-  return '[ ]';
+  if (s === 'done')  return G.todoDone;
+  if (s === 'doing') return G.todoDoing;
+  return G.todoPending;
 }
 
 function markColor(s: Todo['status'], t: ReturnType<typeof getTheme>): string {

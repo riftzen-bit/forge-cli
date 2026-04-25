@@ -5,6 +5,7 @@ import type { ChatMessage } from './MessageList.js';
 import { getTheme } from '../ui/theme.js';
 import { baseToolName, displayName } from './toolFormat.js';
 import { Markdown } from './Markdown.js';
+import { G } from '../ui/glyphs.js';
 
 type Props = { message: ChatMessage; verbose?: boolean };
 
@@ -43,9 +44,9 @@ function formatToolInput(input: Record<string, unknown>): string[] {
 }
 
 function statusGlyph(status: 'run' | 'ok' | 'err' | undefined, t: ReturnType<typeof getTheme>) {
-  if (!status || status === 'run') return <Text color={t.warn}>●</Text>;
-  if (status === 'ok') return <Text color={t.success}>●</Text>;
-  return <Text color={t.error}>●</Text>;
+  if (!status || status === 'run') return <Text color={t.warn} bold>{G.toolRun}</Text>;
+  if (status === 'ok') return <Text color={t.success} bold>{G.toolOk}</Text>;
+  return <Text color={t.error} bold>{G.toolErr}</Text>;
 }
 
 function formatMs(ms: number): string {
@@ -70,8 +71,8 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     return (
       <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Box>
-          <Text color={t.info} bold>{'> '}</Text>
-          <Text color={t.info}>you</Text>
+          <Text color={t.info} bold>{G.prefixYou} </Text>
+          <Text color={t.info} bold>you</Text>
         </Box>
         <Box
           borderStyle="single"
@@ -91,8 +92,8 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     return (
       <Box flexDirection="column" marginBottom={1} marginTop={1}>
         <Box>
-          <Text color={t.accent} bold>{'* '}</Text>
-          <Text color={t.accent}>forge</Text>
+          <Text color={t.accent} bold>{G.prefixForge} </Text>
+          <Text color={t.accent} bold>forge</Text>
         </Box>
         <Box
           borderStyle="single"
@@ -122,7 +123,11 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
         borderColor={t.muted}
         paddingLeft={1}
       >
-        <Text color={t.muted}>thought ({m.text.length} chars)</Text>
+        <Box>
+          <Text color={t.muted}>{G.diamondHollow} </Text>
+          <Text color={t.muted} bold>thought</Text>
+          <Text color={t.muted}>  {G.bullet}  {m.text.length} chars</Text>
+        </Box>
         <Text color={t.muted} italic>{display}</Text>
       </Box>
     );
@@ -150,11 +155,17 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
       <Box flexDirection="column">
         <Box>
           {statusGlyph(m.status, t)}
-          <Text color={t.muted}> {tagPrefix}</Text>
+          <Text> </Text>
+          {tagPrefix && <Text color={t.accentDim}>{tagPrefix}</Text>}
           <Text color={t.toolTag} bold>{name}</Text>
-          <Text color={t.text}>({args})</Text>
-          {stats && <Text color={t.accentDim}>{stats}</Text>}
-          {dur && <Text color={t.muted}>  {dur}</Text>}
+          {args && (
+            <>
+              <Text color={t.muted}>  </Text>
+              <Text color={t.text}>{args}</Text>
+            </>
+          )}
+          {stats && <Text color={t.accentDim}>  {stats}</Text>}
+          {dur && <Text color={t.muted}>  {G.bullet}  {dur}</Text>}
         </Box>
         {diff && (base === 'Edit' || base === 'Write') && (
           <Diff oldText={diff.old} newText={diff.next} verbose={verbose} />
@@ -168,12 +179,12 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
         )}
         {m.status === 'ok' && m.output && !diff && (
           <Box paddingLeft={2}>
-            <Text color={t.muted}>{'  └ '}{cleanPreview(m.output)}</Text>
+            <Text color={t.muted}>{`  ${G.branchEnd} `}{cleanPreview(m.output)}</Text>
           </Box>
         )}
         {m.status === 'err' && m.output && (
           <Box paddingLeft={2}>
-            <Text color={t.error}>{'  └ '}{cleanPreview(m.output)}</Text>
+            <Text color={t.error}>{`  ${G.branchEnd} `}{cleanPreview(m.output)}</Text>
           </Box>
         )}
       </Box>
@@ -230,14 +241,15 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     return (
       <Box flexDirection="column">
         {m.text.split(/\r?\n/).map((ln, i) => (
-          <Text key={i} color={t.muted}>{i === 0 ? '· ' : '  '}{ln}</Text>
+          <Text key={i} color={t.muted}>{i === 0 ? `${G.bullet} ` : '  '}{ln}</Text>
         ))}
       </Box>
     );
   }
   return (
     <Box>
-      <Text color={t.error}>! {m.text}</Text>
+      <Text color={t.error} bold>{G.toolErr} </Text>
+      <Text color={t.error}>{m.text}</Text>
     </Box>
   );
 });
