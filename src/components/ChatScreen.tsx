@@ -710,9 +710,18 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
               tokens={stats.tokens}
               template={settings?.statusLine}
             />
-            <Text color={t.muted} wrap="truncate-end">
-              enter send · / cmds · ctrl+o details{verbose ? '*' : ''} · esc cancel · ctrl+c exit
-            </Text>
+            <Box flexWrap="wrap">
+              <Text color={t.accentDim} bold>enter</Text>
+              <Text color={t.muted}> send  {G.bullet}  </Text>
+              <Text color={t.accentDim} bold>/</Text>
+              <Text color={t.muted}> cmds  {G.bullet}  </Text>
+              <Text color={t.accentDim} bold>ctrl+o</Text>
+              <Text color={t.muted}> details{verbose ? '*' : ''}  {G.bullet}  </Text>
+              <Text color={t.accentDim} bold>esc</Text>
+              <Text color={t.muted}> cancel  {G.bullet}  </Text>
+              <Text color={t.accentDim} bold>ctrl+c</Text>
+              <Text color={t.muted}> exit</Text>
+            </Box>
           </Box>
         </Box>
       )}
