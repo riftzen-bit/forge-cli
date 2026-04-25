@@ -12,6 +12,20 @@ type LoginOpts = {
 
 export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
   if (opts.oauth) {
+    // --oauth previously ran the Anthropic flow regardless of --provider,
+    // silently ignoring the provider id. That hid the fact that no other
+    // provider has an OAuth flow wired. Surface it explicitly instead.
+    if (opts.provider) {
+      const target = providerFor(opts.provider);
+      if (!target.oauth) {
+        console.error(
+          `oauth login is not available for provider "${target.id}". ` +
+          `Today only Anthropic supports OAuth. Run: forge login --provider ${target.id} (API key)`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
     const r = await runSetupTokenCapture();
     if (!r.ok) {
       console.error(`oauth login failed: ${r.reason}`);

@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput } from 'ink';
 import { SimpleTextInput } from './SimpleTextInput.js';
 import { saveToken, primaryTokenPath } from '../config/tokenStore.js';
 import { getTheme } from '../ui/theme.js';
+import { G } from '../ui/glyphs.js';
 
 type Phase = 'pick' | 'input' | 'saving' | 'done' | 'error';
 type OptionId = 'paste' | 'oauth' | 'quit';
@@ -89,36 +90,40 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
   }
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
-      <Text color={t.accent} bold>forge -- sign in</Text>
+    <Box flexDirection="column" paddingX={1} paddingY={1} borderStyle="round" borderColor={t.accent}>
+      <Box paddingX={1}>
+        <Text color={t.accent} bold>{G.star} forge </Text>
+        <Text color={t.muted}>{G.bullet} </Text>
+        <Text color={t.accentDim}>sign in</Text>
+      </Box>
 
       {phase === 'pick' && (
-        <>
-          <Text color={t.muted}>no token configured. pick a method:</Text>
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
+          <Text color={t.muted}>no token configured — pick a method</Text>
           <Box flexDirection="column" marginTop={1}>
             {OPTIONS.map((opt, i) => {
               const active = i === cursor;
               return (
                 <Box key={opt.id}>
-                  <Text color={active ? t.accent : t.muted}>
-                    {active ? '> ' : '  '}
+                  <Text color={active ? t.accent : t.muted} bold>
+                    {active ? `${G.prompt} ` : '  '}
                   </Text>
                   <Text color={active ? t.accent : t.text} bold={active}>
-                    {opt.label}
+                    {opt.label.padEnd(38)}
                   </Text>
-                  <Text color={t.muted}>  {opt.hint}</Text>
+                  <Text color={t.muted}>{opt.hint}</Text>
                 </Box>
               );
             })}
           </Box>
           <Box marginTop={1}>
-            <Text color={t.muted}>up/dn or j/k move, enter select, q quit</Text>
+            <Text color={t.muted}>up/dn move {G.bullet} enter select {G.bullet} q quit</Text>
           </Box>
-        </>
+        </Box>
       )}
 
       {phase === 'input' && (
-        <Box flexDirection="column" marginTop={1}>
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
           <Text color={t.muted}>
             paste token starting with {TOKEN_PREFIX}, then press enter
           </Text>
@@ -126,7 +131,7 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
             target: {primaryTokenPath()} (hidden, chmod 600)
           </Text>
           <Box marginTop={1}>
-            <Text color={t.accent}>{'> '}</Text>
+            <Text color={t.accent}>{G.prompt} </Text>
             <SimpleTextInput
               value={token}
               onChange={setToken}
@@ -135,23 +140,33 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
               placeholder={`${TOKEN_PREFIX}...`}
             />
           </Box>
-          <Text color={t.muted}>input is masked, esc to cancel</Text>
+          <Text color={t.muted}>input is masked {G.bullet} esc to cancel</Text>
         </Box>
       )}
 
-      {phase === 'saving' && <Text color={t.warn}>.. saving token</Text>}
+      {phase === 'saving' && (
+        <Box paddingX={1} marginTop={1}>
+          <Text color={t.warn}>{G.ellipsis} saving token</Text>
+        </Box>
+      )}
 
       {phase === 'done' && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={t.success}>ok token saved</Text>
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
+          <Box>
+            <Text color={t.success} bold>{G.toolOk} </Text>
+            <Text color={t.success}>token saved</Text>
+          </Box>
           <Text color={t.muted}>{savedPath}</Text>
         </Box>
       )}
 
       {phase === 'error' && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={t.error}>!! {message}</Text>
-          <Text color={t.muted}>press enter/esc to go back</Text>
+        <Box flexDirection="column" paddingX={1} marginTop={1}>
+          <Box>
+            <Text color={t.error} bold>{G.toolErr} </Text>
+            <Text color={t.error}>{message}</Text>
+          </Box>
+          <Text color={t.muted}>enter or esc to go back</Text>
         </Box>
       )}
     </Box>
