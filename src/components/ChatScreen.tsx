@@ -325,7 +325,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     if (r.ok) {
       chatClient.client.attachImage(r.path);
       setAttachmentTick((n) => n + 1);
-      appendHistory({ role: 'system', text: `attached image: ${r.path} (clear: /paste clear or ctrl+x)` });
+      appendHistory({ role: 'system', text: `attached image: ${r.path} (ctrl+x to clear)` });
     } else if (!silent) {
       appendHistory({ role: 'system', text: `paste image failed: ${r.reason}` });
     }

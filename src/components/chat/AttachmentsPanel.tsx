@@ -20,7 +20,7 @@ export function AttachmentsPanel({ client, tick }: Props) {
       <Box>
         <Text color={t.warn} bold>{'+ '}</Text>
         <Text color={t.warn} bold>attachments ({items.length})</Text>
-        <Text color={t.muted}>  ctrl+x clear · /paste rm N · sends with next message</Text>
+        <Text color={t.muted}>  ctrl+x clear · sends with next message</Text>
       </Box>
       <Box
         flexDirection="column"

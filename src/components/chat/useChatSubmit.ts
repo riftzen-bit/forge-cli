@@ -144,7 +144,6 @@ export function makeSubmit(deps: Deps) {
         cost: deps.commands.handleCost,
         retry: deps.commands.handleRetry,
         mcp: deps.commands.handleMcp,
-        paste: deps.commands.handlePaste,
         openLoginPicker: (provider) => {
           deps.setPicker('login');
           if (provider) {

@@ -9,7 +9,7 @@ const EXAMPLES = [
 ];
 
 const SHORTCUTS: { keys: string; hint: string }[] = [
-  { keys: 'ctrl+v',    hint: 'paste image (or ctrl+p / /paste if terminal eats ctrl+v)' },
+  { keys: 'ctrl+v',    hint: 'paste image from clipboard (ctrl+p if terminal swallows ctrl+v)' },
   { keys: 'ctrl+x',    hint: 'clear pending image attachments' },
   { keys: '@<path>',   hint: 'attach a file by mention' },
   { keys: '!<cmd>',    hint: 'run a shell command' },

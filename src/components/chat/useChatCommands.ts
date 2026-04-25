@@ -39,7 +39,6 @@ import {
 } from './commands/info.js';
 import { makeHandleMcp } from './commands/mcp.js';
 import { makeHandleShell } from './commands/shell.js';
-import { makeHandlePaste } from './commands/paste.js';
 import type { SessionSummary } from '../../session/store.js';
 import type { Effort } from '../../agent/effort.js';
 
@@ -72,7 +71,6 @@ export type ChatCommands = {
   handleTodo: (args: string) => string;
   handleMcp: (args: string) => Promise<string>;
   handleShell: (command: string) => Promise<void>;
-  handlePaste: (args: string) => Promise<string>;
 };
 
 export function useChatCommands(ctx: CommandCtx): ChatCommands {
@@ -109,7 +107,6 @@ export function useChatCommands(ctx: CommandCtx): ChatCommands {
       handleTodo: makeHandleTodo(ctx),
       handleMcp: makeHandleMcp(ctx),
       handleShell: makeHandleShell(ctx),
-      handlePaste: makeHandlePaste(ctx),
     };
   }, [ctx]);
 }
