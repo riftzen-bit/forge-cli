@@ -114,9 +114,11 @@ function _StatusBar({ model, effort, auth, cwd, provider, permissionMode, tokens
   return (
     <Box>
       <Text wrap="truncate-end">
-        <Text color={modeColor} bold>{badge_.icon} {badge_.label}</Text>
+        {/* Mode chip — bg-coloured rectangle with inverse fg.  Reads as a
+            real status pill, not just colored text. */}
+        <Text color={t.inverse} backgroundColor={modeColor} bold>{` ${badge_.icon} ${badge_.label.toUpperCase()} `}</Text>
         <Text color={t.borderIdle}>{sep}</Text>
-        <Text color={t.accent}>{labelFor(model)}</Text>
+        <Text color={t.accent} bold>{labelFor(model)}</Text>
         {providerLabel && <Text color={t.muted}>@{providerLabel}</Text>}
         <Text color={t.borderIdle}>{sep}</Text>
         <Text color={t.info}>{effort}</Text>
@@ -129,7 +131,7 @@ function _StatusBar({ model, effort, auth, cwd, provider, permissionMode, tokens
           </>
         )}
         <Text color={t.borderIdle}>{sep}</Text>
-        <Text color={badge.color === 'green' ? t.success : t.error}>{badge.label}</Text>
+        <Text color={badge.color === 'green' ? t.success : t.error}>{badge.color === 'green' ? G.toolOk : G.toolErr} {badge.label}</Text>
         <Text color={t.borderIdle}>{sep}</Text>
         <Text color={t.muted}>{cwdShort}</Text>
       </Text>

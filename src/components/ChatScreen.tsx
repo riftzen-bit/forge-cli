@@ -58,6 +58,7 @@ import { InputHistory } from '../agent/inputHistory.js';
 import type { PermissionRequest } from '../agent/client.js';
 import { captureClipboardImage } from '../agent/clipboard.js';
 import { LoginPicker } from './LoginPicker.js';
+import { G } from '../ui/glyphs.js';
 
 type Props = {
   model: string;
@@ -681,7 +682,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
             </Box>
           )}
           <Box borderStyle="round" borderColor={promptColor} paddingX={1}>
-            <Text color={promptColor} bold>{busy ? '.' : '>'} </Text>
+            <Text color={promptColor} bold>{busy ? G.ellipsis : G.prompt} </Text>
             <SimpleTextInput
               value={input}
               onChange={setInput}
@@ -694,7 +695,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
                 if (paletteOpen) return null;
                 return inputHistoryRef.current.down();
               }}
-              placeholder={busy ? 'type to queue -- sends when ready' : 'ask forge to build, edit, or explain'}
+              placeholder={busy ? 'queue a follow-up — sends when ready' : 'what should forge build, fix, or explain?'}
             />
           </Box>
           {paletteOpen && <CommandPalette commands={palette} cursor={cursor} />}
