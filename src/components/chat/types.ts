@@ -7,7 +7,7 @@ import type { ChatMessage } from '../MessageList.js';
 
 // Which full-screen picker overlay is currently open. 'none' means the
 // normal chat view is visible.
-export type PickerMode = 'none' | 'model' | 'effort' | 'resume' | 'provider';
+export type PickerMode = 'none' | 'model' | 'effort' | 'resume' | 'provider' | 'login';
 
 // Running totals for the current session. Stored in a ref because updating
 // on every usage delta would re-render the whole tree.

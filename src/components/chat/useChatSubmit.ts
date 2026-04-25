@@ -5,6 +5,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { contextWindowFor } from '../../agent/models.js';
 import { expandMentions } from '../../agent/mentions.js';
+import { extractDataUrlImages } from '../../agent/imageInput.js';
 import { classifyError } from '../../agent/errorClassify.js';
 import { handleSlash } from '../../commands/slash.js';
 import type { AgentClient } from '../../agent/client.js';
@@ -25,6 +26,7 @@ type Deps = {
   setCursor: Dispatch<SetStateAction<number>>;
   setHistory: Dispatch<SetStateAction<ChatMessage[]>>;
   setPicker: (p: PickerMode) => void;
+  setLoginInitialProvider?: (id: string | undefined) => void;
   setQueue: Dispatch<SetStateAction<string[]>>;
   // Refs
   busyRef: MutableRefObject<boolean>;
@@ -140,6 +142,14 @@ export function makeSubmit(deps: Deps) {
         cost: deps.commands.handleCost,
         retry: deps.commands.handleRetry,
         mcp: deps.commands.handleMcp,
+        paste: deps.commands.handlePaste,
+        openLoginPicker: (provider) => {
+          deps.setPicker('login');
+          if (provider) {
+            // Provider hint is informational only — LoginPicker reads its
+            // own state. We just open it.
+          }
+        },
         clearScreen: deps.commands.handleClearScreen,
       });
       if (result) deps.setHistory((m) => [...m, { role: 'system', text: result }]);
@@ -160,7 +170,16 @@ export function makeSubmit(deps: Deps) {
 
     let prompt = trimmed;
     try {
-      const expanded = await expandMentions(trimmed, deps.cwd);
+      const dataUrls = await extractDataUrlImages(trimmed);
+      let working = dataUrls.text;
+      if (dataUrls.saved.length > 0) {
+        for (const p of dataUrls.saved) deps.client.attachImage(p);
+        deps.setHistory((m) => [
+          ...m,
+          { role: 'system', text: `decoded ${dataUrls.saved.length} pasted image${dataUrls.saved.length === 1 ? '' : 's'}` },
+        ]);
+      }
+      const expanded = await expandMentions(working, deps.cwd);
       prompt = expanded.prompt;
       if (expanded.files.length > 0) {
         deps.setHistory((m) => [

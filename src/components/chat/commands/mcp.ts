@@ -1,8 +1,8 @@
-// /mcp list|add|rm. Adding/removing servers writes settings but does NOT
-// re-instantiate the running MCP pool — the user has to restart the
-// session. We surface that in the success text.
+// /mcp list|add|rm. Persists to settings.json AND live-applies to the
+// running AgentClient via setMcpServers — the next turn picks up the
+// updated server set without restarting the session.
 
-import { saveSettings } from '../../../config/settings.js';
+import { saveSettings, loadSettings } from '../../../config/settings.js';
 import type { CommandCtx } from './ctx.js';
 
 export function makeHandleMcp(ctx: CommandCtx) {
@@ -11,9 +11,11 @@ export function makeHandleMcp(ctx: CommandCtx) {
     switch (sub) {
       case '':
       case 'list': {
-        const servers = ctx.settings?.mcpServers ?? {};
+        // Read settings live so changes from this command show up.
+        const settings = await loadSettings();
+        const servers = settings.mcpServers ?? {};
         const keys = Object.keys(servers);
-        if (keys.length === 0) return 'no MCP servers configured';
+        if (keys.length === 0) return 'no MCP servers configured. add: /mcp add <name> <command> [args...]';
         return keys
           .map((n) => {
             const s = servers[n]!;
@@ -26,11 +28,15 @@ export function makeHandleMcp(ctx: CommandCtx) {
         const command = rest[1];
         const cmdArgs = rest.slice(2);
         if (!name || !command) return 'usage: /mcp add <name> <command> [args...]';
-        const current = ctx.settings?.mcpServers ?? {};
+        const settings = await loadSettings();
+        const current = settings.mcpServers ?? {};
         const updated = { ...current, [name]: { command, args: cmdArgs } };
         try {
           await saveSettings({ mcpServers: updated });
-          return `added MCP server "${name}". restart session to activate.`;
+          // Live-apply so the next turn sees it.
+          const merged = { ...ctx.client.getMcpServers(), [name]: { command, args: cmdArgs } };
+          ctx.client.setMcpServers(merged);
+          return `added MCP server "${name}" (live, next turn).`;
         } catch (err) {
           return `save failed: ${(err as Error).message}`;
         }
@@ -38,12 +44,16 @@ export function makeHandleMcp(ctx: CommandCtx) {
       case 'rm': {
         const name = rest[0];
         if (!name) return 'usage: /mcp rm <name>';
-        const current = { ...(ctx.settings?.mcpServers ?? {}) };
+        const settings = await loadSettings();
+        const current = { ...(settings.mcpServers ?? {}) };
         if (!(name in current)) return `no MCP server "${name}"`;
         delete current[name];
         try {
           await saveSettings({ mcpServers: current });
-          return `removed MCP server "${name}". restart session to apply.`;
+          const merged = { ...ctx.client.getMcpServers() };
+          delete merged[name];
+          ctx.client.setMcpServers(merged);
+          return `removed MCP server "${name}" (live).`;
         } catch (err) {
           return `save failed: ${(err as Error).message}`;
         }

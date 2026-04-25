@@ -1,4 +1,6 @@
 import { query, type Options, type CanUseTool } from '@anthropic-ai/claude-agent-sdk';
+import { isAbsolute, resolve } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { loadToken, loadProviderKey } from '../config/tokenStore.js';
 import { resolveModel } from './models.js';
 import { buildSystemPrompt, PARTIAL_COMPACTION } from '../prompts/index.js';
@@ -95,6 +97,14 @@ export class AgentClient {
   private extraAllowedTools: string[];
   private provider: string;
   private providerConfig: ProviderConfig;
+  // Paths the agent has Read (or successfully Edited/Written) in this session.
+  // Used to surface a clearer hint when an Edit/Write fires before a Read.
+  private readPaths = new Set<string>();
+  // Track tool name + path by tool_use id so we can update readPaths when
+  // the tool_result arrives.
+  private toolMeta = new Map<string, { name: string; path: string | undefined }>();
+  // Pending image attachments to inject as a system note before next send.
+  private pendingAttachments: Array<{ path: string; kind: 'image' | 'file' }> = [];
   readonly agentTag: string | undefined;
 
   constructor(opts: ClientOptions) {
@@ -127,6 +137,49 @@ export class AgentClient {
 
   setHooks(hooks: { preTool: Hook[]; postTool: Hook[] }): void {
     this.hooks = hooks;
+  }
+
+  setMcpServers(servers: Record<string, unknown>): void {
+    // SDK options are rebuilt every send(), so a plain assignment makes the
+    // change take effect on the next turn — no restart needed.
+    this.mcpServers = servers ?? {};
+  }
+
+  getMcpServers(): Record<string, unknown> {
+    return this.mcpServers;
+  }
+
+  // Tell the client a path was read out-of-band (e.g. we did a manual fs
+  // read for image paste). Lets canUseTool stop blocking subsequent Edits.
+  markPathRead(filePath: string): void {
+    const norm = this.normalizePath(filePath);
+    if (norm) this.readPaths.add(norm);
+  }
+
+  // Queue an attachment marker that gets prepended to the next user message.
+  // We don't ship the binary in-band — Read tool will load it from disk.
+  attachImage(filePath: string): void {
+    this.pendingAttachments.push({ path: filePath, kind: 'image' });
+  }
+
+  attachFile(filePath: string): void {
+    this.pendingAttachments.push({ path: filePath, kind: 'file' });
+  }
+
+  private normalizePath(p: unknown): string | undefined {
+    if (typeof p !== 'string' || !p) return undefined;
+    const abs = isAbsolute(p) ? p : resolve(process.cwd(), p);
+    return process.platform === 'win32' ? abs.toLowerCase().replace(/\\/g, '/') : abs;
+  }
+
+  private extractToolPath(name: string, input: Record<string, unknown>): string | undefined {
+    if (name === 'Read' || name === 'Edit' || name === 'Write' || name === 'MultiEdit') {
+      return typeof input.file_path === 'string' ? (input.file_path as string) : undefined;
+    }
+    if (name === 'NotebookRead' || name === 'NotebookEdit') {
+      return typeof input.notebook_path === 'string' ? (input.notebook_path as string) : undefined;
+    }
+    return undefined;
   }
 
   setPermissionMode(mode: PermissionMode): void {
@@ -199,6 +252,9 @@ export class AgentClient {
       ...tail,
     ];
     this.recountHistory();
+    // After compaction the model loses memory of previously-Read files, so
+    // its next Edit/Write must be preceded by a fresh Read. Reset the gate.
+    this.readPaths.clear();
     cb?.onCompactRun?.(before, this.tokenTotal);
     this.warned = false;
   }
@@ -239,11 +295,40 @@ export class AgentClient {
     // tool call in the same turn.
     const hasRules = this.permissionRules.length > 0;
     const hasPreHooks = this.hooks.preTool.length > 0;
-    if (this.permissionMode !== 'autoAccept' && !locks && !hasRules && !hasPreHooks) return undefined;
+    // We always want canUseTool wired so the read-before-edit gate runs.
+    // The early-return is gone — building the canUseTool is cheap.
+    void hasRules; void hasPreHooks; void locks;
 
     return async (toolName, input, opts) => {
-      // Rule check first — denies short-circuit, allows fall through to
-      // the autoAccept prompt (an explicit "allow" rule means the user
+      // Read-before-edit gate. SDK enforces this internally with a terse
+      // error; we surface a clearer nudge so the model retries with Read.
+      // We also mark the path as read on successful Edit/Write so the
+      // model can chain follow-up edits to the same file without being
+      // blocked again. Skipped in yolo mode (which doesn't reach here).
+      const editTools = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+      if (editTools.has(toolName)) {
+        const raw = this.extractToolPath(toolName, input);
+        const norm = this.normalizePath(raw);
+        if (raw && norm && !this.readPaths.has(norm)) {
+          let exists = true;
+          if (toolName === 'Write') {
+            try {
+              await stat(isAbsolute(raw) ? raw : resolve(process.cwd(), raw));
+            } catch {
+              exists = false;
+            }
+          }
+          if (toolName !== 'Write' || exists) {
+            return {
+              behavior: 'deny',
+              message: `must Read ${raw} before ${toolName}. Call Read on this exact path first, then re-attempt the ${toolName}.`,
+            };
+          }
+        }
+      }
+
+      // Rule check — denies short-circuit, allows fall through to the
+      // autoAccept prompt (an explicit "allow" rule means the user
       // already opted in for this pattern, no need to re-prompt).
       const ruleDecision = matchRule(this.permissionRules, toolName, input);
       if (ruleDecision?.decision === 'deny') {
@@ -381,6 +466,21 @@ export class AgentClient {
   }
 
   async send(userText: string, cb: StreamCallbacks = {}): Promise<string> {
+    if (this.pendingAttachments.length > 0) {
+      const lines: string[] = [];
+      for (const att of this.pendingAttachments) {
+        if (att.kind === 'image') {
+          lines.push(`[attached image: ${att.path}] (use the Read tool with file_path="${att.path}" to view it)`);
+        } else {
+          lines.push(`[attached file: ${att.path}] (use the Read tool to inspect)`);
+        }
+        // Pre-mark the path as "available to read" so the model isn't blocked
+        // when it Reads the attachment.
+        this.markPathRead(att.path);
+      }
+      userText = `${lines.join('\n')}\n\n${userText}`;
+      this.pendingAttachments = [];
+    }
     this.history.push({ role: 'user', content: userText });
     // If we have real usage from a prior turn, don't overwrite it with a
     // local history estimate — local history excludes tool content so the
@@ -470,6 +570,8 @@ export class AgentClient {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
               const id = (block as { id?: string }).id ?? `${Date.now()}-${Math.random()}`;
               this.toolStartedAt.set(id, Date.now());
+              const trackedPath = this.extractToolPath(block.name, toolInput);
+              this.toolMeta.set(id, { name: block.name, path: trackedPath });
               if (block.name === 'TodoWrite' && Array.isArray(toolInput['todos'])) {
                 const items = toolInput['todos'] as AgentTodo[];
                 cb.onTodos?.(items);
@@ -513,6 +615,12 @@ export class AgentClient {
             const started = this.toolStartedAt.get(b.tool_use_id);
             const ms = started ? Date.now() - started : 0;
             this.toolStartedAt.delete(b.tool_use_id);
+            const meta = this.toolMeta.get(b.tool_use_id);
+            this.toolMeta.delete(b.tool_use_id);
+            if (meta && meta.path && !b.is_error) {
+              const norm = this.normalizePath(meta.path);
+              if (norm) this.readPaths.add(norm);
+            }
             const { preview, lines } = extractStats(b.content);
             const evt: ToolResultEvent = {
               id: b.tool_use_id,

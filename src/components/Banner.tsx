@@ -34,10 +34,13 @@ export function Banner({ cwd, version = '0.1' }: Props) {
           <Text color={t.muted}>   {path}</Text>
         </Box>
       </Box>
-      <Box marginTop={1} paddingX={1}>
+      <Box marginTop={1} paddingX={1} flexWrap="wrap">
         <Text color={t.muted}>type </Text>
         <Text color={t.accent} bold>/</Text>
         <Text color={t.muted}> for commands  </Text>
+        <Text color={t.muted}>|  </Text>
+        <Text color={t.accent} bold>ctrl+v</Text>
+        <Text color={t.muted}> paste image  </Text>
         <Text color={t.muted}>|  </Text>
         <Text color={t.accent} bold>ctrl+o</Text>
         <Text color={t.muted}> details  </Text>

@@ -33,6 +33,8 @@ type SlashCtx = {
   cost: () => string;
   retry: () => string;
   mcp: (args: string) => Promise<string>;
+  paste: () => Promise<string>;
+  openLoginPicker: (provider?: string) => void;
   clearScreen: () => void;
 };
 
@@ -147,6 +149,14 @@ export async function handleSlash(line: string, ctx: SlashCtx): Promise<string> 
 
     case 'mcp':
       return ctx.mcp(rest);
+
+    case 'paste':
+      return ctx.paste();
+
+    case 'login': {
+      ctx.openLoginPicker(rest || undefined);
+      return '';
+    }
 
     case 'compact':
       ctx.compact();

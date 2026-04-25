@@ -55,6 +55,8 @@ import { DEFAULT_PROVIDER } from '../agent/providers.js';
 import { listProviderKeys } from '../config/tokenStore.js';
 import { InputHistory } from '../agent/inputHistory.js';
 import type { PermissionRequest } from '../agent/client.js';
+import { captureClipboardImage } from '../agent/clipboard.js';
+import { LoginPicker } from './LoginPicker.js';
 
 type Props = {
   model: string;
@@ -64,9 +66,10 @@ type Props = {
   oneShot?: string;
   settings?: Settings;
   onExit: () => void;
+  onRequestOAuth?: () => void;
 };
 
-export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit }: Props) {
+export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit, onRequestOAuth }: Props) {
   const { exit } = useApp();
   const t = getTheme();
 
@@ -94,6 +97,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     settings?.activeProvider ?? DEFAULT_PROVIDER,
   );
   const [providerKeys, setProviderKeys] = useState<Set<string>>(new Set());
+  const [loginInitialProvider, setLoginInitialProvider] = useState<string | undefined>(undefined);
 
   // --- Refs ---
   const busyRef = useRef(false);
@@ -315,6 +319,20 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
       appendHistory({ role: 'system', text: msg });
       return;
     }
+    // Ctrl+V: try to grab an image from the OS clipboard. If clipboard is
+    // text or no image is present, we just no-op — the terminal's own paste
+    // (which inserts text) has already happened by the time we get here.
+    if (key.ctrl && ch === 'v') {
+      void (async () => {
+        const r = await captureClipboardImage();
+        if (r.ok) {
+          chatClient.client.attachImage(r.path);
+          appendHistory({ role: 'system', text: `attached image: ${r.path} (sends with next message)` });
+        }
+        // silent on failure — text paste path already covered the user
+      })();
+      return;
+    }
     if (key.ctrl && ch === 'o') {
       // Toggle verbose AND repaint terminal: Ink's <Static> writes each item
       // to scrollback exactly once, so previously-emitted MessageRows freeze
@@ -481,6 +499,22 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
           hasKey={(id) => providerKeys.has(id)}
           onSelect={(id) => void commands.applyProvider(id)}
           onCancel={() => setPicker('none')}
+        />
+      )}
+      {picker === 'login' && (
+        <LoginPicker
+          initialProvider={loginInitialProvider}
+          onDone={async (msg) => {
+            setPicker('none');
+            setLoginInitialProvider(undefined);
+            await refreshProviderKeys();
+            appendHistory({ role: 'system', text: msg });
+          }}
+          onCancel={() => {
+            setPicker('none');
+            setLoginInitialProvider(undefined);
+          }}
+          onRequestOAuth={onRequestOAuth}
         />
       )}
 

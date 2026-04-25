@@ -55,6 +55,7 @@ export function App({ settings, modelOverride, oneShot, onRequestOAuth }: Props)
       oneShot={oneShot}
       settings={settings}
       onExit={() => exit()}
+      onRequestOAuth={onRequestOAuth}
     />
   );
 }
