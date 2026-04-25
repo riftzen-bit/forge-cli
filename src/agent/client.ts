@@ -484,8 +484,17 @@ export class AgentClient {
             ? 'default'
             : 'acceptEdits';
 
+    // Extended thinking is a Claude-only API feature. Sending
+    // maxThinkingTokens to non-Claude models (LiteLLM-proxied OpenAI /
+    // Gemini / Nemotron, etc.) makes the proxy reject the request with
+    // "unknown field". Gate on provider.nativeAnthropic AND a Claude-family
+    // model id. OpenRouter's anthropic/claude-* slugs match.
+    const apiId = apiIdFor(this.model);
+    const isClaudeModel = /(^|\/)claude-/i.test(apiId);
+    const supportsThinking = provider.nativeAnthropic && isClaudeModel;
+
     const options: Options = {
-      model: apiIdFor(this.model),
+      model: apiId,
       cwd,
       env,
       permissionMode: sdkMode,
@@ -498,9 +507,11 @@ export class AgentClient {
         ...this.extraAllowedTools,
       ],
       systemPrompt,
-      maxThinkingTokens: budgetFor(this.effort),
       includePartialMessages: true,
     };
+    if (supportsThinking) {
+      options.maxThinkingTokens = budgetFor(this.effort);
+    }
     if (this.permissionMode === 'yolo') {
       // SDK requires this companion flag with bypassPermissions.
       (options as Options & { allowDangerouslySkipPermissions?: boolean }).allowDangerouslySkipPermissions = true;
