@@ -113,7 +113,7 @@ async function pasteFlow(): Promise<void> {
         '  1. Visit https://console.anthropic.com/settings/keys',
         '  2. Create or copy an API key that starts with "sk-ant-".',
         '  3. Paste it below and press Enter. The token is saved to a',
-        '     hidden file inside the Forge install directory.',
+        '     hidden file under ~/.forge/.',
         '',
       ].join('\n'),
     );

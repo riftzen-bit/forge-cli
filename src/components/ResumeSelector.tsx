@@ -14,10 +14,14 @@ export function ResumeSelector({ onSelect, onCancel }: Props) {
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       const list = await listSessions(20);
-      setSessions(list);
+      if (!cancelled) setSessions(list);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useInput((_, key) => {

@@ -34,7 +34,10 @@ export type Usage = {
 };
 
 export function estimateCost(model: string, usage: Usage): number {
-  const p = PRICING[model] ?? PRICING[stripProviderPrefix(model)];
+  const p =
+    PRICING[model] ??
+    PRICING[stripProviderPrefix(model)] ??
+    PRICING[stripContextTag(stripProviderPrefix(model))];
   if (!p) return 0;
   const mt = 1_000_000;
   const base =
@@ -51,6 +54,13 @@ export function estimateCost(model: string, usage: Usage): number {
 function stripProviderPrefix(id: string): string {
   const slash = id.indexOf('/');
   return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+// Drop disambiguation suffixes like "[1m]" or "@bigmodel" so a variant id
+// falls back to the base model's pricing. Without this, variants silently
+// report $0 cost.
+function stripContextTag(id: string): string {
+  return id.replace(/[\[@].*$/, '');
 }
 
 export function formatCost(usd: number): string {

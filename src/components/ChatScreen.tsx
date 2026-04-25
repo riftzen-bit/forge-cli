@@ -92,6 +92,13 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     | (PermissionRequest & { resolve: (c: PermissionChoice) => void })
     | undefined
   >(undefined);
+  // Queue of permission requests that arrived while another was pending.
+  // The prompt shows the head; when the user picks, we pop the next one.
+  // Without a queue, a second request would overwrite the first and
+  // deadlock the SDK's canUseTool await for the dropped request.
+  const permissionQueueRef = useRef<
+    Array<PermissionRequest & { resolve: (c: PermissionChoice) => void }>
+  >([]);
   const [renderEpoch, setRenderEpoch] = useState(0);
   const [queue, setQueue] = useState<string[]>([]);
   const [activeProvider, setActiveProvider] = useState<string>(
@@ -297,7 +304,10 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   useEffect(() => {
     if (oneShot) {
       void (async () => {
-        await submit(oneShot);
+        // Use submitRef so we invoke the latest closure (which captures
+        // current commands/chatClient/settings). Calling the first-render
+        // `submit` here would bake in stale refs to long-lived objects.
+        await submitRef.current(oneShot);
         onExit();
         exit();
       })();
@@ -472,17 +482,26 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
 
   // Wire the permission requester once so the client sees state updates
   // through the setter closure. On unmount, clear the requester AND
-  // resolve any pending Promise so the SDK doesn't hang.
+  // resolve any pending/queued Promises so the SDK doesn't hang.
   useEffect(() => {
     chatClient.client.setPermissionRequester((req) => {
       return new Promise<PermissionChoice>((resolve) => {
-        setPendingPermission({ ...req, resolve });
+        const entry = { ...req, resolve };
+        setPendingPermission((cur) => {
+          if (cur) {
+            permissionQueueRef.current.push(entry);
+            return cur;
+          }
+          return entry;
+        });
       });
     });
     return () => {
       chatClient.client.setPermissionRequester(undefined);
       const p = pendingPermissionRef.current;
       if (p) p.resolve('no');
+      for (const q of permissionQueueRef.current) q.resolve('no');
+      permissionQueueRef.current = [];
     };
   }, [chatClient.client]);
 
@@ -590,7 +609,9 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
           input={pendingPermission.input}
           onPick={async (choice) => {
             const req = pendingPermission;
-            setPendingPermission(undefined);
+            // Show the next queued request (if any) immediately.
+            const next = permissionQueueRef.current.shift();
+            setPendingPermission(next);
             if (choice === 'yesSession') {
               const match = matchPatternFor(req.tool, req.input);
               const rule: Parameters<typeof appendProjectAllow>[1] = {

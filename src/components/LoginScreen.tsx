@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { SimpleTextInput } from './SimpleTextInput.js';
 import { saveToken, primaryTokenPath } from '../config/tokenStore.js';
@@ -28,6 +28,10 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
   const [token, setToken] = useState('');
   const [message, setMessage] = useState('');
   const [savedPath, setSavedPath] = useState('');
+  const loggedInTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (loggedInTimerRef.current) clearTimeout(loggedInTimerRef.current);
+  }, []);
 
   useInput((input, key) => {
     if (phase === 'pick') {
@@ -74,7 +78,10 @@ export function LoginScreen({ onLoggedIn, onRequestOAuth }: Props) {
       setSavedPath(path);
       setToken('');
       setPhase('done');
-      setTimeout(onLoggedIn, 500);
+      loggedInTimerRef.current = setTimeout(() => {
+        loggedInTimerRef.current = null;
+        onLoggedIn();
+      }, 500);
     } catch (err) {
       setMessage((err as Error).message);
       setPhase('error');

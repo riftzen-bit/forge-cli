@@ -57,7 +57,10 @@ function formatMs(ms: number): string {
 function cleanPreview(s: string): string {
   const first = s.split(/\r?\n/, 1)[0] ?? '';
   const stripped = first.replace(/^\s*\d+\s*(?:→|->)\s*/, '');
-  return stripped.length > 120 ? stripped.slice(0, 117) + '...' : stripped;
+  // Truncate by code points so the slice can't split a surrogate pair
+  // (which would render as a replacement glyph).
+  const cps = Array.from(stripped);
+  return cps.length > 120 ? cps.slice(0, 117).join('') + '...' : stripped;
 }
 
 export const MessageRow = memo(function MessageRow({ message: m, verbose = false }: Props) {
@@ -153,8 +156,9 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
           {stats && <Text color={t.accentDim}>{stats}</Text>}
           {dur && <Text color={t.muted}>  {dur}</Text>}
         </Box>
-        {diff && base === 'Edit' && <Diff oldText={diff.old} newText={diff.next} verbose={verbose} />}
-        {verbose && diff && base === 'Write' && <Diff oldText={diff.old} newText={diff.next} verbose />}
+        {diff && (base === 'Edit' || base === 'Write') && (
+          <Diff oldText={diff.old} newText={diff.next} verbose={verbose} />
+        )}
         {verbose && !diff && (
           <Box flexDirection="column" paddingLeft={2}>
             {formatToolInput(m.input).map((line, j) => (

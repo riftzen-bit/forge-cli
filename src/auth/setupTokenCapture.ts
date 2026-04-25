@@ -27,7 +27,7 @@ export async function runSetupTokenCapture(): Promise<CaptureResult> {
       '----------------------------------------------------------------',
       '  launching `claude setup-token`. follow the browser prompts.',
       '  forge will capture the printed token and save it to a',
-      '  hidden file inside the install directory.',
+      '  hidden file under ~/.forge/.',
       '----------------------------------------------------------------',
       '',
     ].join('\n'),
@@ -50,7 +50,12 @@ export async function runSetupTokenCapture(): Promise<CaptureResult> {
       captured += chunk.toString('utf8');
     });
 
-    child.on('exit', (code) => resolve(code ?? 1));
+    // Listen on 'close' rather than 'exit': 'exit' can fire while stdio is
+    // still flushing and the token is printed in the last chunk of output,
+    // which would cause a spurious "token not found" failure.
+    let exit = 1;
+    child.on('exit', (code) => { exit = code ?? 1; });
+    child.on('close', () => resolve(exit));
     child.on('error', (err) => {
       process.stderr.write(`\nspawn error: ${err.message}\n`);
       resolve(1);

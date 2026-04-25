@@ -4,7 +4,7 @@
 // matching that pattern auto-allow without re-prompting.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import type { PermissionRule } from './settings.js';
 
@@ -46,7 +46,12 @@ export async function loadProjectPermissions(cwd: string): Promise<ProjectPermis
 const writeChains = new Map<string, Promise<unknown>>();
 
 export async function appendProjectAllow(cwd: string, rule: ProjectRule): Promise<ProjectPermissions> {
-  const key = cwd;
+  // Normalize so differing spellings of the same directory (trailing
+  // separator, mixed case on Windows, relative vs absolute) share the same
+  // write chain; without this the read-modify-write race this chain is
+  // designed to prevent re-emerges.
+  const resolved = resolve(cwd);
+  const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   const prev = writeChains.get(key) ?? Promise.resolve();
   const next = prev.then(async () => {
     const cur = await loadProjectPermissions(cwd);

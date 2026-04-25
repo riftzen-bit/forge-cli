@@ -8,7 +8,7 @@
 // re-launches the chat). For other providers the OAuth option surfaces a
 // "not yet supported" hint and falls back to the API-key flow.
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { SimpleTextInput } from './SimpleTextInput.js';
 import { PROVIDERS, validateKey, type ProviderId } from '../agent/providers.js';
@@ -42,6 +42,10 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
   const [baseURL, setBaseURL] = useState('');
   const [key, setKey] = useState('');
   const [message, setMessage] = useState('');
+  const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+  }, []);
 
   const provider = PROVIDERS[cursor]!;
   const oauthSupported = OAUTH_NATIVE.has(provider.id);
@@ -66,7 +70,7 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
     }
   }
 
-  function chooseMethod(): void {
+  async function chooseMethod(): Promise<void> {
     const m = methodOptions[methodCursor]!;
     if (m.id === 'oauth') {
       if (!oauthSupported) {
@@ -75,8 +79,9 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
         return;
       }
       // Anthropic: exit Ink, run `claude setup-token`, restart. Persist
-      // activeProvider first so re-launch lands on anthropic.
-      void saveSettings({ activeProvider: provider.id });
+      // activeProvider first so re-launch lands on anthropic — must await
+      // so the write is flushed before we tear down Ink and re-exec.
+      await saveSettings({ activeProvider: provider.id });
       if (onRequestOAuth) onRequestOAuth();
       return;
     }
@@ -94,7 +99,7 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
     if (phase === 'method') {
       if (k.upArrow || input === 'k') setMethodCursor((c) => (c - 1 + methodOptions.length) % methodOptions.length);
       else if (k.downArrow || input === 'j') setMethodCursor((c) => (c + 1) % methodOptions.length);
-      else if (k.return) chooseMethod();
+      else if (k.return) void chooseMethod();
       else if (k.escape) {
         if (initialProvider) onCancel();
         else setPhase('pick');
@@ -140,7 +145,10 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
       }
       await saveSettings(next);
       setPhase('done');
-      setTimeout(() => onDone(`logged in: ${provider.label}`), 400);
+      doneTimerRef.current = setTimeout(() => {
+        doneTimerRef.current = null;
+        onDone(`logged in: ${provider.label}`);
+      }, 400);
     } catch (err) {
       setMessage((err as Error).message);
       setPhase('error');

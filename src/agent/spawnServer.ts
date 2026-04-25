@@ -32,10 +32,12 @@ export type SpawnServerBundle = {
   allowedTools: string[];
 };
 
-let tagCounter = 0;
-const nextTag = (): string => `sub${++tagCounter}`;
-
 export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
+  // Per-server counter so tags stay sequential within one main agent and
+  // don't interleave with siblings in a multi-server process.
+  let tagCounter = 0;
+  const nextTag = (): string => `sub${++tagCounter}`;
+
   const subagentPromptFor = (type?: string): string | undefined => {
     if (type === 'Explore' || type === 'explore') return EXPLORE_AGENT;
     if (type === 'verification' || type === 'verification-specialist') return VERIFICATION_AGENT;
@@ -44,6 +46,7 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
   };
 
   const runTyped = async (task: string, tag: string, subagentType?: string): Promise<string> => {
+    const persona = subagentPromptFor(subagentType);
     const clientOpts: ConstructorParameters<typeof AgentClient>[0] = {
       model: opts.getModel(),
       effort: opts.getEffort(),
@@ -52,11 +55,13 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
     };
     if (opts.getProvider) clientOpts.provider = opts.getProvider();
     if (opts.getProviderConfig) clientOpts.providerConfig = opts.getProviderConfig();
+    // Persona installs as the SDK system prompt (NOT as a user-message
+    // prefix), so the subagent sends one persona-only system block per
+    // turn instead of base-prompt + persona-as-user every call.
+    if (persona) clientOpts.systemPromptOverride = persona;
     const client = new AgentClient(clientOpts);
-    const persona = subagentPromptFor(subagentType);
-    const fullTask = persona ? `${persona}\n\n--- YOUR TASK ---\n${task}` : task;
     try {
-      const reply = await client.send(fullTask, {
+      const reply = await client.send(task, {
         onThinking: (delta) => opts.onEvent(tag, { kind: 'thinking', delta }),
         onText: (delta) => opts.onEvent(tag, { kind: 'text', delta }),
         onToolStart: (ev: ToolStartEvent) => opts.onEvent(tag, {

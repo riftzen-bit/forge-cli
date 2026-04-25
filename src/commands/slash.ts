@@ -179,9 +179,13 @@ export async function handleSlash(line: string, ctx: SlashCtx): Promise<string> 
         return `doctor failed: ${(err as Error).message}`;
       }
 
-    case 'logout':
-      await clearToken();
+    case 'logout': {
+      const res = await clearToken();
+      if (res.envVarsCleared.length > 0) {
+        return `token cleared. note: also unset ${res.envVarsCleared.join(' and ')} in your shell, or it will be picked up on next launch.`;
+      }
       return 'token cleared';
+    }
 
     case 'clear':
       ctx.clearScreen();

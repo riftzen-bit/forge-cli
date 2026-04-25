@@ -88,9 +88,29 @@ Loaded on demand when the matching subagent is spawned:
 - agent-prompt-webfetch-summarizer.md [ACTIVE — internal WebFetch]
 - agent-prompt-claudemd-creation.md [ACTIVE — /init]
 
+## Dynamic auto-injection (Layer 4)
+
+`src/prompts/upstream/loader.ts` exposes a lazy reader for any piece in
+this directory, keyed by stable id. `src/prompts/dynamic.ts` decides
+which extra pieces to append to the base prompt for a given turn:
+
+- **Always-on extras**: parallel-tool-call note, code-reference style, malicious-content refusal.
+- **Mode triggers**: `permissionMode === 'plan'` → `agent-prompt-plan-mode-enhanced.md`. `effort === 'Low'` → `system-prompt-minimal-mode.md` + concise tone.
+- **Keyword triggers** on the latest user message:
+  - memory / CLAUDE.md / skill → memory instructions + staleness verification
+  - subagent / delegate / spawn_agent → delegation + prompt-writing examples
+  - hook / settings.json → hooks-configuration
+  - compact / summarize → context-compaction-summary + partial-compaction
+  - schedule / cron / background → background-job-behavior
+
+Every piece is read on first use and cached in-process for the rest of
+the session. Adding a new trigger costs no extra disk I/O on unrelated
+turns. Subagents pass `isSubagent: true` so main-agent-only pieces drop.
+
 ## Archived pieces
 
-Everything else in this directory is archived. Examples of what Forge does not load at runtime:
+Everything else in this directory remains archived from the runtime path
+even after dynamic injection. Examples of what Forge still does not load:
 
 - Chrome browser / computer-use tooling (Forge is terminal-only)
 - Managed Agents platform prompts (Anthropic-internal)
@@ -100,7 +120,6 @@ Everything else in this directory is archived. Examples of what Forge does not l
 - Remote planning / ultraplan
 - Skillify & session-skill conversion
 - PowerShell 5.1-specific sleep-command policy
-- Background job / autonomous loop harness rules
-- Auto-mode / minimal-mode (Claude Code internal modes)
+- Auto-mode (Claude Code internal mode)
 
 These files remain on disk so future Forge features can activate them without re-downloading. To promote an archived piece to active, reference it from `src/prompts/index.ts` (for main prompt) or from a subagent factory (for a subagent).

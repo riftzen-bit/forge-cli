@@ -13,6 +13,7 @@ export const DEFAULT_PERMISSION_MODE: PermissionMode = 'default';
 // Cycle order for Shift+Tab.
 export function nextPermissionMode(cur: PermissionMode): PermissionMode {
   const i = PERMISSION_MODES.indexOf(cur);
+  if (i === -1) return DEFAULT_PERMISSION_MODE;
   return PERMISSION_MODES[(i + 1) % PERMISSION_MODES.length]!;
 }
 
@@ -94,10 +95,15 @@ const DEFAULTS: Settings = {
 // Old settings files (pre-permissionMode) used `yolo` and `planMode`
 // booleans. Promote them into `permissionMode` so users don't have to
 // retoggle. yolo wins over planMode if both true (matches old behavior).
+// Clear the legacy flags so they don't linger after migration and drift
+// out of sync when the user later changes permissionMode.
 function migrateLegacy(s: Settings): Settings {
-  if (s.permissionMode !== 'default') return s;
-  if (s.yolo) return { ...s, permissionMode: 'yolo' };
-  if (s.planMode) return { ...s, permissionMode: 'plan' };
+  if (s.permissionMode !== 'default') {
+    if (s.yolo || s.planMode) return { ...s, yolo: false, planMode: false };
+    return s;
+  }
+  if (s.yolo) return { ...s, permissionMode: 'yolo', yolo: false, planMode: false };
+  if (s.planMode) return { ...s, permissionMode: 'plan', yolo: false, planMode: false };
   return s;
 }
 

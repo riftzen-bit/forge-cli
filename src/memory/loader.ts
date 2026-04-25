@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -75,13 +75,28 @@ export function extractIncludes(text: string, baseDir: string, home: string): st
   return out;
 }
 
+// Module-level cache keyed by absolute path. Hits when mtime/size match,
+// so repeated send() calls don't keep re-reading CLAUDE.md / AGENTS.md
+// from disk. A file edit invalidates automatically on the next stat.
+const fileCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
+
 async function readSafe(path: string): Promise<string | null> {
   try {
+    const s = await stat(path);
+    const cached = fileCache.get(path);
+    if (cached && cached.mtimeMs === s.mtimeMs && cached.size === s.size) {
+      return cached.content;
+    }
     const content = await readFile(path, 'utf8');
+    fileCache.set(path, { mtimeMs: s.mtimeMs, size: s.size, content });
     return content;
   } catch {
     return null;
   }
+}
+
+export function clearMemoryCache(): void {
+  fileCache.clear();
 }
 
 async function processFile(

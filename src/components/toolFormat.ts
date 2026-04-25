@@ -18,7 +18,9 @@ const DISPLAY_NAME: Record<string, string> = {
 const PATH_ONLY = new Set(['Read', 'Write', 'Edit', 'NotebookRead', 'NotebookEdit']);
 
 function stripMcp(name: string): string {
-  const m = name.match(/^mcp__[^_]+__(.+)$/);
+  // Non-greedy so server names containing underscores (e.g. `github_pr`) are
+  // still matched; the delimiter between server and tool is the literal `__`.
+  const m = name.match(/^mcp__.+?__(.+)$/);
   return m ? m[1]! : name;
 }
 
@@ -69,9 +71,9 @@ export function prettyArgs(
         const lc = (input['content'] as string).split(/\r?\n/).length;
         return `${rel}  ${lc}L`;
       }
-      if (typeof off === 'number' && typeof lim === 'number') {
+      if (typeof off === 'number' && typeof lim === 'number' && lim > 0) {
         const rangeLines = meta.lines !== undefined ? `  ${meta.lines}L` : '';
-        return `${rel}  L${off}-${off + lim}${rangeLines}`;
+        return `${rel}  L${off}-${off + lim - 1}${rangeLines}`;
       }
       if (meta.lines !== undefined) return `${rel}  ${meta.lines}L`;
       return rel;

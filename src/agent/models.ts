@@ -1,10 +1,14 @@
 import type { ProviderId } from './providers.js';
 
 export type ModelEntry = {
+  // Internal id. Must be unique across MODELS. When the upstream API model
+  // name differs (e.g. two providers serve the same vendor model), set
+  // apiId to the name the provider expects.
   id: string;
   label: string;
   provider: ProviderId;
   contextWindow?: number;
+  apiId?: string;
 };
 
 const K = 1_000;
@@ -32,7 +36,7 @@ export const MODELS: ModelEntry[] = [
 
   { id: 'glm-4.6',            label: 'GLM 4.6 (Z.ai)',      provider: 'zai' },
   { id: 'glm-4.6-flash',      label: 'GLM Flash',           provider: 'zai' },
-  { id: 'glm-4.6',            label: 'GLM 4.6 (BigModel)',  provider: 'glm' },
+  { id: 'glm-4.6@bigmodel',   label: 'GLM 4.6 (BigModel)',  provider: 'glm', apiId: 'glm-4.6' },
 
   { id: 'kimi-k2-turbo-preview', label: 'Kimi K2 Turbo', provider: 'kimi' },
   { id: 'kimi-k2',               label: 'Kimi K2',       provider: 'kimi' },
@@ -56,6 +60,15 @@ export function contextWindowFor(idOrLabel: string): number {
   const resolved = resolveModel(idOrLabel);
   const entry = MODELS.find((m) => m.id === resolved);
   return entry?.contextWindow ?? DEFAULT_CTX;
+}
+
+// Translate an internal model id to the upstream API name. Used when the
+// same upstream model is served by more than one provider and we had to
+// disambiguate ids (e.g. glm-4.6 vs glm-4.6@bigmodel).
+export function apiIdFor(idOrLabel: string): string {
+  const resolved = resolveModel(idOrLabel);
+  const entry = MODELS.find((m) => m.id === resolved);
+  return entry?.apiId ?? resolved;
 }
 
 export function labelFor(id: string): string {

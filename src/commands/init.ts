@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 const TEMPLATE = (name: string): string => `# ${name}
@@ -40,10 +40,16 @@ Describe the key modules, data flow, and any non-obvious constraints here.
 export async function runInit(cwd: string): Promise<string> {
   const path = join(cwd, 'CLAUDE.md');
   try {
-    await readFile(path, 'utf8');
+    await stat(path);
     return `CLAUDE.md already exists at ${path}. skipping.`;
-  } catch {
-    /* not present, create */
+  } catch (err) {
+    // Only treat "file does not exist" as "go ahead and create". Anything
+    // else (EACCES, EBUSY, EISDIR, …) could mean the file is there but
+    // unreadable and we must not overwrite it.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      throw err;
+    }
   }
   const name = basename(cwd) || 'Project';
   await writeFile(path, TEMPLATE(name), 'utf8');

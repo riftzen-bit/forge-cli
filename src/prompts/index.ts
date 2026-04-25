@@ -40,9 +40,20 @@ import {
   MANDATORY_VERIFICATION,
   FOLLOW_AGENTS_MD,
 } from './verification.js';
+import { buildDynamicExtras, type DynamicContext } from './dynamic.js';
+import type { Effort } from '../agent/effort.js';
 
 export type PromptContext = {
   planMode?: boolean;
+  // Effort tier from the active client. 'Low' triggers minimal-mode
+  // because that's the smallest effort Forge exposes today.
+  effort?: Effort;
+  // Latest user message — used by the dynamic selector for keyword
+  // triggers (memory, hooks, scheduling, …). Optional.
+  recentUserText?: string;
+  // True when assembling for a subagent client. Strips main-agent-only
+  // pieces from the dynamic extras.
+  isSubagent?: boolean;
 };
 
 // Always-on base. Assembled once at module load — cheap.
@@ -92,6 +103,17 @@ export async function buildSystemPrompt(
 
   if (ctx.planMode) {
     parts.push('', PLAN_MODE);
+  }
+
+  const dyn: DynamicContext = {
+    permissionMode: ctx.planMode ? 'plan' : 'default',
+  };
+  if (ctx.effort) dyn.effort = ctx.effort;
+  if (ctx.recentUserText) dyn.recentUserText = ctx.recentUserText;
+  if (ctx.isSubagent) dyn.isSubagent = ctx.isSubagent;
+  const extras = await buildDynamicExtras(dyn);
+  if (extras) {
+    parts.push('', '# Situational guidance', '', extras);
   }
 
   const files = await loadMemoryFiles({ cwd });

@@ -2,7 +2,7 @@ import { query, type Options, type CanUseTool } from '@anthropic-ai/claude-agent
 import { isAbsolute, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { loadToken, loadProviderKey } from '../config/tokenStore.js';
-import { resolveModel } from './models.js';
+import { resolveModel, apiIdFor } from './models.js';
 import { buildSystemPrompt, PARTIAL_COMPACTION } from '../prompts/index.js';
 import { budgetFor, type Effort } from './effort.js';
 import { FileCoordinator, lockKeyFor, type Release } from './fileLocks.js';
@@ -34,6 +34,11 @@ type ClientOptions = {
   provider?: ProviderId | string;
   providerConfig?: ProviderConfig;
   requester?: PermissionRequester;
+  // When set, this string is used as the SDK systemPrompt instead of the
+  // composed BASE_PROMPT + dynamic extras. Subagents use it to install a
+  // persona-only system prompt so they don't carry the full main-agent
+  // base prompt on every call.
+  systemPromptOverride?: string;
 };
 
 export type ToolStartEvent = {
@@ -97,6 +102,14 @@ export class AgentClient {
   private extraAllowedTools: string[];
   private provider: string;
   private providerConfig: ProviderConfig;
+  private systemPromptOverride: string | undefined;
+  // Snippet prepended to the next user message after compact() runs. Lets
+  // the new SDK session pick up the prior summary even though we drop the
+  // session id to actually shrink the API-side history.
+  private pendingRecap: string | undefined;
+  // Last user message text — passed to the dynamic prompt selector so
+  // keyword triggers (memory, hooks, …) only fire on relevant turns.
+  private lastUserText: string | undefined;
   // Paths the agent has Read (or successfully Edited/Written) in this session.
   // Used to surface a clearer hint when an Edit/Write fires before a Read.
   private readPaths = new Set<string>();
@@ -120,6 +133,7 @@ export class AgentClient {
     this.extraAllowedTools = opts.extraAllowedTools ?? [];
     this.provider = opts.provider ?? DEFAULT_PROVIDER;
     this.providerConfig = opts.providerConfig ?? {};
+    if (opts.systemPromptOverride) this.systemPromptOverride = opts.systemPromptOverride;
   }
 
   setProvider(id: string, config: ProviderConfig = {}): void {
@@ -246,9 +260,13 @@ export class AgentClient {
   async compact(cb?: StreamCallbacks): Promise<void> {
     if (this.history.length === 0) return;
     const before = this.tokenTotal;
-    const keepTail = 4;
-    const tail = this.history.slice(-keepTail);
-    const head = this.history.slice(0, -keepTail);
+    // If the conversation is too short to split head/tail cleanly but we are
+    // still over the compact threshold (e.g. a single very large user turn),
+    // summarize the entire history rather than silently no-op and dispatch
+    // another oversized request.
+    const keepTail = this.history.length > 4 ? 4 : 0;
+    const tail = keepTail > 0 ? this.history.slice(-keepTail) : [];
+    const head = keepTail > 0 ? this.history.slice(0, -keepTail) : this.history;
     if (head.length === 0) return;
     const transcript = head
       .map((h) => `${h.role.toUpperCase()}: ${h.content}`)
@@ -261,11 +279,21 @@ export class AgentClient {
       providerConfig: this.providerConfig,
     });
     const summary = await summarizer.send(prompt);
-    this.history = [
-      { role: 'user', content: `[context-recap] ${summary}` },
-      ...tail,
-    ];
+    // Don't insert a synthetic "[context-recap]" history entry here — the
+    // same summary is queued in pendingRecap and gets prepended to the next
+    // user message in send(), so inserting it here would double-count it in
+    // the local token estimate.
+    this.history = [...tail];
     this.recountHistory();
+    // CRITICAL: drop the SDK session so the next send() does NOT resume
+    // the pre-compact session — otherwise the API still re-injects the
+    // full prior history each turn and "compaction" only shrinks our
+    // local UI counter, never the real billing context. The summary is
+    // re-injected as the prefix of the next user message via pendingRecap.
+    this.lastSessionId = undefined;
+    this.pendingResume = undefined;
+    this.sawRealUsage = false;
+    this.pendingRecap = `[context-recap from prior session]\n${summary}`;
     // After compaction the model loses memory of previously-Read files, so
     // its next Edit/Write must be preceded by a fresh Read. Reset the gate.
     this.readPaths.clear();
@@ -403,20 +431,6 @@ export class AgentClient {
       throw new Error(`no key configured for provider "${this.provider}". ${hint}`);
     }
 
-    if (this.provider === DEFAULT_PROVIDER && token.startsWith('sk-ant-oat')) {
-      process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
-      delete process.env.ANTHROPIC_API_KEY;
-    } else {
-      process.env.ANTHROPIC_API_KEY = token;
-      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
-    }
-
-    if (baseURL) {
-      process.env.ANTHROPIC_BASE_URL = baseURL;
-    } else {
-      delete process.env.ANTHROPIC_BASE_URL;
-    }
-
     if (!provider.nativeAnthropic && !baseURL) {
       throw new Error(
         `provider "${this.provider}" needs an Anthropic-compat proxy URL. ` +
@@ -424,9 +438,37 @@ export class AgentClient {
       );
     }
 
+    // Build a per-call env so concurrent sends (pool, spawn_parallel) with
+    // different providers don't race on shared process.env globals.
+    const env: Record<string, string | undefined> = { ...process.env };
+    if (this.provider === DEFAULT_PROVIDER && token.startsWith('sk-ant-oat')) {
+      env.CLAUDE_CODE_OAUTH_TOKEN = token;
+      delete env.ANTHROPIC_API_KEY;
+    } else {
+      env.ANTHROPIC_API_KEY = token;
+      delete env.CLAUDE_CODE_OAUTH_TOKEN;
+    }
+    if (baseURL) {
+      env.ANTHROPIC_BASE_URL = baseURL;
+    } else {
+      delete env.ANTHROPIC_BASE_URL;
+    }
+
     const canUseTool = this.buildCanUseTool();
     const cwd = process.cwd();
-    const systemPrompt = await buildSystemPrompt(cwd, { planMode: this.permissionMode === 'plan' });
+    let systemPrompt: string;
+    if (this.systemPromptOverride !== undefined) {
+      // Subagents pass a persona-only prompt here. We do not append the
+      // base prompt — the persona text intentionally replaces it.
+      systemPrompt = this.systemPromptOverride;
+    } else {
+      const promptCtx: Parameters<typeof buildSystemPrompt>[1] = {
+        planMode: this.permissionMode === 'plan',
+        effort: this.effort,
+      };
+      if (this.lastUserText !== undefined) promptCtx.recentUserText = this.lastUserText;
+      systemPrompt = await buildSystemPrompt(cwd, promptCtx);
+    }
 
     // SDK permissionMode mapping:
     //   'plan'       → SDK 'plan' (read-only enforced by SDK)
@@ -443,8 +485,9 @@ export class AgentClient {
             : 'acceptEdits';
 
     const options: Options = {
-      model: this.model,
+      model: apiIdFor(this.model),
       cwd,
+      env,
       permissionMode: sdkMode,
       allowedTools: [
         'Read', 'Write', 'Edit',
@@ -495,6 +538,14 @@ export class AgentClient {
       userText = `${lines.join('\n')}\n\n${userText}`;
       this.pendingAttachments = [];
     }
+    if (this.pendingRecap !== undefined) {
+      // First send() after compact(): prepend the prior-session summary so
+      // the new SDK session has continuity even though we dropped the
+      // session id to actually shrink the API-side history.
+      userText = `${this.pendingRecap}\n\n${userText}`;
+      this.pendingRecap = undefined;
+    }
+    this.lastUserText = userText;
     this.history.push({ role: 'user', content: userText });
     // If we have real usage from a prior turn, don't overwrite it with a
     // local history estimate — local history excludes tool content so the

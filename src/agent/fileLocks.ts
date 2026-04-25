@@ -24,10 +24,11 @@ export class FileCoordinator {
     if (this.canGrant(entry, mode)) {
       this.grant(entry, mode);
     } else {
+      // The releaser updates state (writer/readers) before grant() resolves,
+      // so we must NOT call grant() again here or we'd double-count.
       await new Promise<void>((resolve) => {
         entry!.queue.push({ mode, grant: resolve });
       });
-      this.grant(entry, mode);
     }
 
     let released = false;
@@ -59,11 +60,14 @@ export class FileCoordinator {
     else entry.readers = Math.max(0, entry.readers - 1);
 
     // Drain queue: grant writer if alone-eligible, or consecutive readers.
+    // We must mutate writer/readers BEFORE calling grant() so any synchronous
+    // acquire() that runs after grant resolves sees the lock as already held.
     while (entry.queue.length > 0) {
       const next = entry.queue[0]!;
       if (next.mode === 'write') {
         if (entry.readers === 0 && !entry.writer) {
           entry.queue.shift();
+          entry.writer = true;
           next.grant();
           return;
         }
@@ -71,6 +75,7 @@ export class FileCoordinator {
       } else {
         if (entry.writer) break;
         entry.queue.shift();
+        entry.readers += 1;
         next.grant();
       }
     }

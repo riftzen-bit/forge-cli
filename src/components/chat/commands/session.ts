@@ -42,14 +42,15 @@ export function makeApplyResume(ctx: CommandCtx) {
   return async (s: SessionSummary): Promise<void> => {
     ctx.client.queueResume(s.id);
     ctx.setPicker('none');
-    let restored: number;
+    let restored = 0;
+    let loadError: Error | undefined;
     try {
       const past = await loadSessionMessages(s.file);
       ctx.setHistory(past);
       restored = past.length;
-    } catch {
+    } catch (err) {
       ctx.setHistory([]);
-      restored = 0;
+      loadError = err as Error;
     }
     ctx.appendHistory({
       role: 'system',
@@ -57,6 +58,12 @@ export function makeApplyResume(ctx: CommandCtx) {
         ? `resumed ${s.id.slice(0, 8)} -- ${restored} message${restored === 1 ? '' : 's'} restored, type to continue`
         : `resuming ${s.id.slice(0, 8)} -- next message continues it`,
     });
+    if (loadError) {
+      ctx.appendHistory({
+        role: 'error',
+        text: `could not load past transcript: ${loadError.message}`,
+      });
+    }
   };
 }
 
