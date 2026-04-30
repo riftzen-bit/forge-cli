@@ -20,8 +20,11 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
     const target = providerFor(opts.provider ?? settings.activeProvider ?? DEFAULT_PROVIDER);
     if (target.runtime === 'codex-cli') {
       await saveSettings({ activeProvider: target.id });
-      const code = runCodexLogin({ deviceAuth: opts.deviceAuth });
-      if (code !== 0) process.exitCode = code;
+      const result = runCodexLogin({ deviceAuth: opts.deviceAuth });
+      if (result.code !== 0) {
+        if (result.error) console.error(`codex login failed: ${result.error}`);
+        process.exitCode = result.code;
+      }
       return;
     }
     if (!target.oauth) {
@@ -68,8 +71,11 @@ async function providerFlow(providerId: string): Promise<void> {
 
   if (provider.keyAuth === false) {
     await saveSettings({ activeProvider: provider.id });
-    const code = runCodexLogin();
-    if (code !== 0) process.exitCode = code;
+    const result = runCodexLogin();
+    if (result.code !== 0) {
+      if (result.error) console.error(`codex login failed: ${result.error}`);
+      process.exitCode = result.code;
+    }
     return;
   }
 

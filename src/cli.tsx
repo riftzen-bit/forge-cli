@@ -123,8 +123,11 @@ async function renderAppLoop(
 
     const latest = await loadSettings();
     if (latest.activeProvider === 'chatgpt') {
-      const code = runCodexLogin();
-      if (code !== 0) process.stderr.write(`\nforge: codex login failed (${code})\n`);
+      const result = runCodexLogin({ deviceAuth: true });
+      if (result.code !== 0) {
+        const detail = result.error ? `: ${result.error}` : '';
+        process.stderr.write(`\nforge: codex login failed (${result.code})${detail}\n`);
+      }
       else process.stdout.write('\nforge: codex session ready\n\n');
     } else {
       const r = await runSetupTokenCapture();
