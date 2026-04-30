@@ -7,6 +7,7 @@ import { modelsForProvider } from '../models.js';
 import { buildCodexExecArgs, mapCodexJsonEvent } from './codex.js';
 import { codexReasoningEffortFor } from '../thinking.js';
 import { findCodexCliBin } from '../../auth/codexCliBin.js';
+import { CODEX_LOGIN_STDIO } from '../../auth/codexCli.js';
 
 describe('ChatGPT/Codex provider metadata', () => {
   test('declares ChatGPT as Codex CLI session runtime', () => {
@@ -26,6 +27,10 @@ describe('ChatGPT/Codex provider metadata', () => {
 });
 
 describe('Codex CLI runtime mapping', () => {
+  test('does not inherit stdin for Codex login handoff', () => {
+    expect(CODEX_LOGIN_STDIO).toEqual(['ignore', 'inherit', 'inherit']);
+  });
+
   test('allows CODEX_BIN to point at a custom Codex executable', () => {
     const oldBin = process.env.CODEX_BIN;
     const dir = join(tmpdir(), `forge-codex-custom-${process.pid}`);
