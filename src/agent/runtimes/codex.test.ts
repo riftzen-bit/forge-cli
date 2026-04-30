@@ -8,6 +8,7 @@ import { buildCodexExecArgs, mapCodexJsonEvent } from './codex.js';
 import { codexReasoningEffortFor } from '../thinking.js';
 import { findCodexCliBin } from '../../auth/codexCliBin.js';
 import { CODEX_LOGIN_STDIO } from '../../auth/codexCli.js';
+import { buildCodexProcess } from '../../auth/codexProcess.js';
 
 describe('ChatGPT/Codex provider metadata', () => {
   test('declares ChatGPT as Codex CLI session runtime', () => {
@@ -29,6 +30,16 @@ describe('ChatGPT/Codex provider metadata', () => {
 describe('Codex CLI runtime mapping', () => {
   test('does not inherit stdin for Codex login handoff', () => {
     expect(CODEX_LOGIN_STDIO).toEqual(['ignore', 'inherit', 'inherit']);
+  });
+
+  test('wraps Windows Codex shims for Node child_process', () => {
+    const ps = buildCodexProcess('C:\\Users\\paul\\AppData\\Roaming\\npm\\codex.ps1', ['login', 'status']);
+    expect(ps.command).toBe(process.platform === 'win32' ? 'powershell.exe' : 'C:\\Users\\paul\\AppData\\Roaming\\npm\\codex.ps1');
+    const cmd = buildCodexProcess('C:\\Users\\paul\\AppData\\Roaming\\npm\\codex.cmd', ['login', 'status']);
+    if (process.platform === 'win32') {
+      expect(cmd.command).toBe('cmd.exe');
+      expect(cmd.windowsVerbatimArguments).toBe(true);
+    }
   });
 
   test('allows CODEX_BIN to point at a custom Codex executable', () => {
@@ -70,7 +81,7 @@ describe('Codex CLI runtime mapping', () => {
 
   test('builds exec args with json output and permission flags', () => {
     expect(buildCodexExecArgs({ model: 'gpt-5.5', prompt: 'hello', permissionMode: 'plan', cwd: '/repo' })).toEqual([
-      'exec', '--json', '--model', 'gpt-5.5', '-c', 'model_reasoning_effort="medium"', '--cd', '/repo', '--sandbox', 'read-only', 'hello',
+      'exec', '--json', '--model', 'gpt-5.5', '-c', 'model_reasoning_effort="medium"', '--cd', '/repo', '--sandbox', 'read-only', '-',
     ]);
     expect(buildCodexExecArgs({ model: 'gpt-5.5', prompt: 'hello', permissionMode: 'yolo', cwd: '/repo' })).toContain('--dangerously-bypass-approvals-and-sandbox');
   });

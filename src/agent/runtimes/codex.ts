@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { findCodexCliBin } from '../../auth/codexCliBin.js';
+import { buildCodexProcess } from '../../auth/codexProcess.js';
 import type { PermissionMode } from '../../config/settings.js';
 import type { StreamCallbacks, UsageDelta } from '../client.js';
 import { DEFAULT_THINKING, codexReasoningEffortFor, type Thinking } from '../thinking.js';
@@ -44,7 +45,7 @@ export function buildCodexExecArgs(opts: CodexExecArgs): string[] {
   } else {
     args.push('--full-auto');
   }
-  args.push(opts.prompt);
+  args.push('-');
   return args;
 }
 
@@ -95,10 +96,18 @@ export async function runCodexExec(opts: CodexExecArgs & { signal?: AbortSignal;
   if (!bin) {
     throw new Error('Codex CLI not found. Install Codex CLI or set CODEX_BIN to its executable path.');
   }
-  const child = spawn(bin, args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const proc = buildCodexProcess(bin, args);
+  const child = spawn(proc.command, proc.args, {
+    cwd: opts.cwd,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+    windowsVerbatimArguments: proc.windowsVerbatimArguments,
+  });
   const started = new Map<string, number>();
   let stderr = '';
   let out = '';
+
+  child.stdin.end(opts.prompt);
 
   const onAbort = (): void => {
     child.kill();

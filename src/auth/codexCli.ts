@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { findCodexCliBin } from './codexCliBin.js';
+import { buildCodexProcess } from './codexProcess.js';
 
 export type CodexLoginResult = {
   code: number;
@@ -11,7 +12,12 @@ export const CODEX_LOGIN_STDIO: ['ignore', 'inherit', 'inherit'] = ['ignore', 'i
 export function hasCodexLogin(): boolean {
   const bin = findCodexCliBin();
   if (!bin) return false;
-  const res = spawnSync(bin, ['login', 'status'], { stdio: 'ignore', windowsHide: true });
+  const proc = buildCodexProcess(bin, ['login', 'status']);
+  const res = spawnSync(proc.command, proc.args, {
+    stdio: 'ignore',
+    windowsHide: true,
+    windowsVerbatimArguments: proc.windowsVerbatimArguments,
+  });
   return res.status === 0;
 }
 
@@ -20,7 +26,12 @@ export function runCodexLogin(opts: { deviceAuth?: boolean } = {}): CodexLoginRe
   if (!bin) return { code: 1, error: 'Codex CLI not found. Install Codex CLI or set CODEX_BIN.' };
   const args = ['login'];
   if (opts.deviceAuth) args.push('--device-auth');
-  const res = spawnSync(bin, args, { stdio: CODEX_LOGIN_STDIO, windowsHide: true });
+  const proc = buildCodexProcess(bin, args);
+  const res = spawnSync(proc.command, proc.args, {
+    stdio: CODEX_LOGIN_STDIO,
+    windowsHide: true,
+    windowsVerbatimArguments: proc.windowsVerbatimArguments,
+  });
   if (res.error) return { code: 1, error: res.error.message };
   return { code: res.status ?? 1 };
 }
