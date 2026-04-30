@@ -4,7 +4,8 @@ import { stat } from 'node:fs/promises';
 import { loadToken, loadProviderKey } from '../config/tokenStore.js';
 import { resolveModel, apiIdFor, usesOneMillionContext } from './models.js';
 import { buildSystemPrompt, buildSubagentPrompt, PARTIAL_COMPACTION } from '../prompts/index.js';
-import { budgetFor, type Effort } from './effort.js';
+import { DEFAULT_EFFORT, budgetFor, type Effort } from './effort.js';
+import { DEFAULT_THINKING, type Thinking } from './thinking.js';
 import { FileCoordinator, lockKeyFor, type Release } from './fileLocks.js';
 import { estimateTokens, contextStateFor, compactThresholdFor } from './contextBudget.js';
 import { contextWindowFor } from './models.js';
@@ -12,6 +13,7 @@ import type { PermissionRule, Hook, ProviderConfig, PermissionMode } from '../co
 import { matchRule } from './permissions.js';
 import { runHooks } from './hooks.js';
 import { DEFAULT_PROVIDER, providerFor, type ProviderId } from './providers.js';
+import { runCodexExec } from './runtimes/codex.js';
 import { shouldPrompt } from '../config/projectPermissions.js';
 import { classifyError } from './errorClassify.js';
 import type { AskRequester, AskQuestion } from './askUser.js';
@@ -26,6 +28,7 @@ export type PermissionRequester = (req: PermissionRequest) => Promise<Permission
 type ClientOptions = {
   model: string;
   effort?: Effort;
+  thinking?: Thinking;
   locks?: FileCoordinator;
   agentTag?: string;
   permissionMode?: PermissionMode;
@@ -92,6 +95,7 @@ export type StreamCallbacks = {
 export class AgentClient {
   private model: string;
   private effort: Effort;
+  private thinking: Thinking;
   private pendingResume: string | undefined;
   private lastSessionId: string | undefined;
   private history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -130,6 +134,7 @@ export class AgentClient {
   constructor(opts: ClientOptions) {
     this.model = resolveModel(opts.model);
     this.effort = opts.effort ?? 'Medium';
+    this.thinking = opts.thinking ?? DEFAULT_THINKING;
     this.locks = opts.locks;
     this.agentTag = opts.agentTag;
     this.permissionMode = opts.permissionMode ?? 'default';
@@ -268,6 +273,32 @@ export class AgentClient {
     this.tokenTotal = total;
   }
 
+  // Drop the SDK session id and queue a verbatim-transcript recap so the
+  // *next* send() can re-seed the freshly-spawned subprocess with prior
+  // turns. Without this, ESC-cancel and subprocess-crash retries silently
+  // wipe conversation memory because the SDK is the only source of
+  // continuity (we never resend `this.history` ourselves — it's only used
+  // for token accounting and compact()). Skips when the caller already
+  // queued a recap (e.g. compact()), or when there is nothing to preserve.
+  private dropSessionWithRecap(): void {
+    this.lastSessionId = undefined;
+    this.pendingResume = undefined;
+    this.sawRealUsage = false;
+    if (this.pendingRecap !== undefined) return;
+    if (this.history.length === 0) return;
+    // Verbatim transcript (not a summary): cheap, deterministic, and the
+    // SDK's prompt cache will absorb the cost on subsequent turns. Tool
+    // content isn't stored in this.history so this only carries user/
+    // assistant text — exactly what the model needs to remember "what
+    // we've been talking about".
+    const transcript = this.history
+      .map((h) => `${h.role.toUpperCase()}: ${h.content}`)
+      .join('\n\n');
+    this.pendingRecap = `[prior-session transcript — the previous SDK process was restarted; treat the messages below as our actual conversation history so far, then respond to the new user message that follows]\n\n${transcript}`;
+    // Fresh subprocess won't remember which files we Read either.
+    this.readPaths.clear();
+  }
+
   async compact(cb?: StreamCallbacks): Promise<void> {
     if (this.history.length === 0) return;
     const before = this.tokenTotal;
@@ -328,6 +359,14 @@ export class AgentClient {
     return this.effort;
   }
 
+  setThinking(thinking: Thinking): void {
+    this.thinking = thinking;
+  }
+
+  getThinking(): Thinking {
+    return this.thinking;
+  }
+
   queueResume(sessionId: string): void {
     this.pendingResume = sessionId;
   }
@@ -354,9 +393,9 @@ export class AgentClient {
           return { behavior: 'deny', message: 'AskUserQuestion is unavailable: no UI is attached.' };
         }
         const questions = (input as { questions?: AskQuestion[] }).questions ?? [];
-        const resp = await this.askRequester(questions);
-        if (resp.cancelled) {
-          return { behavior: 'deny', message: 'User dismissed the question.' };
+        const resp = await this.raceAbort(this.askRequester(questions));
+        if (resp === 'aborted' || resp.cancelled) {
+          return { behavior: 'deny', message: 'User dismissed the question.', interrupt: true };
         }
         return {
           behavior: 'allow',
@@ -412,9 +451,12 @@ export class AgentClient {
       // this call, or the tool is read-only). Bypass entirely if no
       // requester wired — the SDK falls back to permissionMode.
       if (isAutoAccept && !ruleAllowed && shouldPrompt(toolName) && this.requester) {
-        const decision = await this.requester({ tool: toolName, input });
-        if (decision === 'no') {
-          return { behavior: 'deny', message: 'user declined permission for this tool call', interrupt: true };
+        const decision = await this.raceAbort(this.requester({ tool: toolName, input }));
+        if (decision === 'aborted' || decision === 'no') {
+          const msg = decision === 'aborted'
+            ? 'user cancelled the turn while the permission prompt was open'
+            : 'user declined permission for this tool call';
+          return { behavior: 'deny', message: msg, interrupt: true };
         }
         // Both 'yes' and 'yesSession' fall through to allow. Persisting
         // the rule is the caller's responsibility (it has cwd + filesystem).
@@ -439,6 +481,75 @@ export class AgentClient {
       try { release(); } catch { /* ignore */ }
     }
     this.pendingReleases.clear();
+  }
+
+  // Race a pending UI promise (permission prompt, askUser) against the
+  // turn's abort signal. Without this, hitting ESC while a modal is open
+  // leaves the SDK call hanging — the modal never resolves because the
+  // caller already moved on, but canUseTool keeps awaiting it.
+  private raceAbort<T>(promise: Promise<T>): Promise<T | 'aborted'> {
+    const ctrl = this.abortController;
+    if (!ctrl) return promise;
+    if (ctrl.signal.aborted) return Promise.resolve('aborted');
+    return new Promise<T | 'aborted'>((resolve, reject) => {
+      const onAbort = (): void => {
+        ctrl.signal.removeEventListener('abort', onAbort);
+        resolve('aborted');
+      };
+      ctrl.signal.addEventListener('abort', onAbort, { once: true });
+      promise.then(
+        (v) => {
+          ctrl.signal.removeEventListener('abort', onAbort);
+          resolve(v);
+        },
+        (err) => {
+          ctrl.signal.removeEventListener('abort', onAbort);
+          reject(err);
+        },
+      );
+    });
+  }
+
+
+  private async buildCodexPrompt(): Promise<string> {
+    const cwd = process.cwd();
+    let systemPrompt: string;
+    if (this.systemPromptOverride !== undefined) {
+      systemPrompt = await buildSubagentPrompt(this.systemPromptOverride, cwd);
+    } else {
+      const promptCtx: Parameters<typeof buildSystemPrompt>[1] = {
+        planMode: this.permissionMode === 'plan',
+        effort: DEFAULT_EFFORT,
+      };
+      if (this.lastUserText !== undefined) promptCtx.recentUserText = this.lastUserText;
+      systemPrompt = await buildSystemPrompt(cwd, promptCtx);
+    }
+    const transcript = this.history
+      .map((h) => `${h.role.toUpperCase()}: ${h.content}`)
+      .join('\n\n');
+    return `${systemPrompt}\n\n--- CONVERSATION TRANSCRIPT ---\n${transcript}`;
+  }
+
+
+  private async sendViaCodex(cb: StreamCallbacks): Promise<string> {
+    this.abortController = new AbortController();
+    try {
+      const out = await runCodexExec({
+        model: apiIdFor(this.model),
+        prompt: await this.buildCodexPrompt(),
+        permissionMode: this.permissionMode,
+        cwd: process.cwd(),
+        thinking: this.thinking,
+        signal: this.abortController.signal,
+        callbacks: cb,
+      });
+      this.history.push({ role: 'assistant', content: out });
+      this.recountHistory();
+      cb.onTokens?.(this.tokenTotal);
+      return out.trim() || '(no output)';
+    } finally {
+      this.abortController = undefined;
+    }
   }
 
   private async buildOptions(): Promise<Options> {
@@ -626,6 +737,10 @@ export class AgentClient {
     }
     cb.onTokens?.(this.tokenTotal);
 
+    if (providerFor(this.provider).runtime === 'codex-cli') {
+      return this.sendViaCodex(cb);
+    }
+
     const options = await this.buildOptions();
 
     let out = '';
@@ -645,6 +760,10 @@ export class AgentClient {
     // events the request is no longer idempotent (history mutations,
     // tool calls, fired callbacks) so failure must surface to the user.
     let receivedAny = false;
+    // Dedup tool ids that have already fired onToolStart (the SDK can emit
+    // the same tool_use id twice — once during stream_event, once in the
+    // assistant event — and the receiving UI showed duplicate rows).
+    const announcedTodoSnapshots = new Set<string>();
     const MAX_ATTEMPTS = 3;
     let attempt = 0;
     streamLoop: while (true) {
@@ -724,7 +843,12 @@ export class AgentClient {
                 const trackedPath = this.extractToolPath(toolBuf.name, parsedInput);
                 this.toolMeta.set(toolBuf.id, { name: toolBuf.name, path: trackedPath });
                 if (toolBuf.name === 'TodoWrite' && Array.isArray(parsedInput['todos'])) {
-                  cb.onTodos?.(parsedInput['todos'] as AgentTodo[]);
+                  const items = parsedInput['todos'] as AgentTodo[];
+                  const sig = JSON.stringify(items);
+                  if (!announcedTodoSnapshots.has(sig)) {
+                    announcedTodoSnapshots.add(sig);
+                    cb.onTodos?.(items);
+                  }
                 }
                 cb.onToolStart?.({ id: toolBuf.id, name: toolBuf.name, input: parsedInput });
                 if (this.hooks.postTool.length > 0) {
@@ -762,6 +886,17 @@ export class AgentClient {
               out += block.text;
               cb.onTextBlock?.(block.text);
             }
+            else if (block.type === 'thinking') {
+              // Some SDK builds only deliver thinking via the consolidated
+              // assistant event (no stream_event thinking_delta). Without
+              // this branch the live ThinkingLine just shows "working" and
+              // history loses the reasoning entirely.
+              const txt = (block as { thinking?: string }).thinking ?? '';
+              if (txt) {
+                cb.onThinking?.(txt);
+                cb.onThinkingDone?.();
+              }
+            }
             else if (block.type === 'tool_use') {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
               const id = (block as { id?: string }).id ?? `${Date.now()}-${Math.random()}`;
@@ -773,7 +908,11 @@ export class AgentClient {
               this.toolMeta.set(id, { name: block.name, path: trackedPath });
               if (block.name === 'TodoWrite' && Array.isArray(toolInput['todos'])) {
                 const items = toolInput['todos'] as AgentTodo[];
-                cb.onTodos?.(items);
+                const sig = JSON.stringify(items);
+                if (!announcedTodoSnapshots.has(sig)) {
+                  announcedTodoSnapshots.add(sig);
+                  cb.onTodos?.(items);
+                }
               }
               cb.onToolStart?.({ id, name: block.name, input: toolInput });
               if (this.hooks.postTool.length > 0) {
@@ -840,6 +979,12 @@ export class AgentClient {
         this.sawRealUsage = sawRealUsage;
         if (!sawRealUsage) this.recountHistory();
         this.abortController = undefined;
+        // Cancellation can leave the SDK subprocess in a half-open state
+        // that exits with code 1 on the next resume. Drop the session id
+        // proactively so the next send() spawns a fresh child — and queue
+        // a transcript recap so the new child still remembers the prior
+        // turns (otherwise ESC silently wipes conversation memory).
+        this.dropSessionWithRecap();
         this.releaseAll();
         return '(cancelled)';
       }
@@ -848,6 +993,24 @@ export class AgentClient {
       if (!receivedAny && attempt < MAX_ATTEMPTS) {
         const c = classifyError(err);
         if (c.retryable) {
+          // SDK subprocess crash (cancellation race, OOM, dead resume id)
+          // → reset the resume so the next query() spawns a fresh child
+          // process. Without this the SDK keeps trying to reattach to a
+          // dead session and the retry loops with the same error until
+          // MAX_ATTEMPTS exhausts. Also queue a transcript recap so the
+          // fresh child re-inherits prior conversation memory.
+          if (c.needsFreshSession) {
+            this.dropSessionWithRecap();
+            options.resume = undefined as unknown as Options['resume'];
+            // dropSessionWithRecap() queued the recap into pendingRecap,
+            // but the live `userText` we hand to the retried query() was
+            // already built. Splice the recap in so the retry attempt
+            // also sees the prior history.
+            if (this.pendingRecap !== undefined) {
+              userText = `${this.pendingRecap}\n\n${userText}`;
+              this.pendingRecap = undefined;
+            }
+          }
           this.releaseAll();
           const delay = Math.min(8000, 500 * Math.pow(2, attempt - 1)) + Math.random() * 250;
           await new Promise((r) => setTimeout(r, delay));

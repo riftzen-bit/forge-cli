@@ -1,6 +1,6 @@
 # Forge
 
-Terminal-native coding agent powered by the Claude Agent SDK. A Claude Code–style experience in Ink/React with diff rendering, streaming thinking, concurrent agents, todos, plan mode, hooks, MCP, auto-compact, permission rules, **multi-provider routing** (Anthropic / OpenRouter / DeepSeek / Z.ai / GLM / Kimi / NVIDIA / OpenAI), and code-intel slash commands (`/review`, `/explain`, `/test`, `/diff`, `/commit`, `/stats`, `/cost`).
+Terminal-native coding agent powered by the Claude Agent SDK. A Claude Code–style experience in Ink/React with diff rendering, streaming thinking, concurrent agents, todos, plan mode, hooks, MCP, auto-compact, permission rules, **multi-provider routing** (Anthropic / ChatGPT-Codex / OpenRouter / DeepSeek / Z.ai / GLM / Kimi / NVIDIA / OpenAI), and code-intel slash commands (`/review`, `/explain`, `/test`, `/diff`, `/commit`, `/stats`, `/cost`).
 
 Forge is an open alternative you can read end-to-end and customize. Contributions welcome.
 
@@ -8,7 +8,7 @@ Forge is an open alternative you can read end-to-end and customize. Contribution
 
 ## Features
 
-- **Multi-provider** — point Forge at any Anthropic-Messages-compatible endpoint. Native support: Anthropic, OpenRouter, DeepSeek (Anthropic-compat), Z.ai / GLM, Kimi / Moonshot. Via LiteLLM proxy: NVIDIA NIM, OpenAI, or any custom endpoint.
+- **Multi-provider** — point Forge at any Anthropic-Messages-compatible endpoint. Native support: Anthropic, OpenRouter, DeepSeek (Anthropic-compat), Z.ai / GLM, Kimi / Moonshot. Via LiteLLM proxy: NVIDIA NIM, OpenAI, or any custom endpoint. ChatGPT/Codex uses official Codex CLI session auth and plan quota.
 - **Streaming thinking + text** — model reasoning and final reply both stream live. Thinking blocks are flushed to history at each tool call so the live panel never shows stale thought.
 - **Claude-style diffs** — `● Update(path)` / `● Create(path)` headers, added/removed line counts, numbered side-by-side context, red/green full-width stripes.
 - **Concurrent agents** — `/parallel taskA || taskB || taskC` spawns multiple agents at once with a shared file lock so they never step on each other.
@@ -24,7 +24,7 @@ Forge is an open alternative you can read end-to-end and customize. Contribution
 - **Hooks** — pre/post-tool shell hooks (run tests before every edit, lint after every write, etc).
 - **MCP servers** — manage live with `/mcp list|add|rm` or declare in `settings.json`.
 - **Custom status line** — template variables like `{model} {provider} {effort} {cwd} {ctx}` in `settings.json`.
-- **OAuth or API key** — either route your calls through Claude Code's official credential store, or drop in your own `sk-ant-` key. Per-provider keys stored in `~/.forge/keys.json` (0600).
+- **OAuth, session, or API key** — either route Anthropic calls through Claude Code's official credential flow, sign into ChatGPT through `codex login`, or drop in your own provider API key. Per-provider keys stored in `~/.forge/keys.json` (0600).
 
 ---
 
@@ -69,7 +69,7 @@ forge "build a React + Vite todo app with TypeScript, Tailwind, local-storage \
 |---|---|
 | `/help` | List commands. |
 | `/model [id]` | Open picker or set model. |
-| `/provider [id]` | Open provider picker (anthropic / openrouter / deepseek / zai / glm / kimi / nvidia / openai / custom). |
+| `/provider [id]` | Open provider picker (anthropic / chatgpt / openrouter / deepseek / zai / glm / kimi / nvidia / openai / custom). |
 | `/effort [level]` | Open picker or set reasoning effort (Low, Medium, High, X-High, Max). |
 | `/plan` | Toggle plan mode (read-only reasoning). |
 | `/parallel a || b || c` | Run multiple agents concurrently with file-lock safety. |
@@ -139,9 +139,9 @@ Hook env passed to shell: `FORGE_HOOK_TOOL`, `FORGE_HOOK_PHASE` (`pre` or `post`
 | `forge "<prompt>"` | One-shot. Agent executes and exits. |
 | `forge -p "<prompt>"` | Same, explicit flag. |
 | `forge -m <model> "<prompt>"` | Override model for this run. |
-| `forge login` | Interactive auth (OAuth or API key, Anthropic). |
-| `forge login --provider <id>` | Login for another provider (`openrouter`, `deepseek`, `zai`, `glm`, `kimi`, `nvidia`, `openai`, `custom`). Prompts for base URL on non-native or custom providers. |
-| `forge login --oauth` | Run `claude setup-token` and capture the token. |
+| `forge login` | Interactive auth (OAuth, session, or API key, Anthropic). |
+| `forge login --provider <id>` | Login for another provider (`chatgpt`, `openrouter`, `deepseek`, `zai`, `glm`, `kimi`, `nvidia`, `openai`, `custom`). Prompts for base URL on non-native or custom providers. |
+| `forge login --oauth` | Run Anthropic OAuth (`claude setup-token`). Use `--provider chatgpt --oauth` for `codex login`. |
 | `forge set provider <id>` | Set active provider. |
 | `forge set baseurl <url> [--provider <id>]` | Override base URL for a provider. |
 | `forge set model <alias\|id>` | Set default model. |
@@ -177,6 +177,11 @@ forge login --provider nvidia            # paste nvapi-... key
 forge set provider nvidia
 # (baseurl defaults to http://localhost:4000 — override with `forge set baseurl`)
 
+# ChatGPT/Codex plan auth ? uses Codex CLI session, not OpenAI API billing
+forge login --provider chatgpt --oauth
+forge set provider chatgpt
+forge set model gpt-5.5
+
 # OpenAI via LiteLLM proxy (Anthropic-compat wrapper)
 litellm --model openai/gpt-4o --port 4000 --api_key $OPENAI_API_KEY &
 forge login --provider openai
@@ -193,6 +198,7 @@ Built-in catalog (provider-tagged). `resolveModel()` accepts both label and ID.
 | Provider | Example IDs |
 |---|---|
 | Anthropic | `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
+| ChatGPT/Codex | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` |
 | OpenRouter | `anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `google/gemini-2.5-pro`, `deepseek/deepseek-chat`, `meta-llama/llama-3.1-70b-instruct` |
 | DeepSeek | `deepseek-chat`, `deepseek-reasoner` |
 | Z.ai / GLM | `glm-4.6`, `glm-4.6-flash` |

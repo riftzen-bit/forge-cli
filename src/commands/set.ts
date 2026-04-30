@@ -25,7 +25,7 @@ export function registerSetCommand(program: Command): void {
 
   set
     .command('provider <id>')
-    .description('Set active provider (anthropic, openrouter, deepseek, zai, glm, kimi, nvidia, openai, custom).')
+    .description('Set active provider (anthropic, chatgpt, openrouter, deepseek, zai, glm, kimi, nvidia, openai, custom).')
     .action(async (id: string) => {
       const p = getProvider(id);
       if (!p) {
@@ -39,7 +39,9 @@ export function registerSetCommand(program: Command): void {
       }
       await saveSettings({ activeProvider: p.id });
       console.log(`active provider -> ${p.label}`);
-      if (!p.nativeAnthropic) {
+      if (p.keyAuth === false) {
+        console.log('note: this provider uses Codex session auth. run: forge login --provider chatgpt --oauth');
+      } else if (!p.nativeAnthropic) {
         console.log('note: this provider needs an Anthropic-compat proxy.');
         console.log(`      forge set baseurl <url>   (default: ${p.baseURL})`);
       }

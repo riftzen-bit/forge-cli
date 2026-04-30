@@ -24,7 +24,6 @@ import {
   CORE_IDENTITY,
   SECURITY_HEADER,
   WORKING_DIRECTORY_OWNERSHIP,
-  DESIGN_TASTE,
   THINK_FIRST,
   SYSTEM_NOTES,
   TOOL_EXECUTION_DENIED,
@@ -57,7 +56,10 @@ export type PromptContext = {
   isSubagent?: boolean;
 };
 
-// Always-on base. Assembled once at module load — cheap.
+// Always-on base. Assembled once at module load — cheap. Order matters:
+// identity first, then thinking-discipline, then the per-task workflow,
+// then tools, then output style. DESIGN_TASTE moved out — it loads via
+// the dynamic selector when the user prompt mentions UI work.
 const BASE_PROMPT = [
   CORE_IDENTITY,
   '',
@@ -88,8 +90,6 @@ const BASE_PROMPT = [
   FOLLOW_AGENTS_MD,
   '',
   ALL_STYLE,
-  '',
-  DESIGN_TASTE,
 ].join('\n');
 
 // Legacy alias — callers importing SYSTEM_PROMPT get the base (plan mode

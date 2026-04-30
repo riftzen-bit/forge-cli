@@ -17,7 +17,7 @@ const TOKEN_PREFIX = 'sk-ant-';
 
 const OPTIONS: { id: OptionId; label: string; hint: string }[] = [
   { id: 'paste', label: 'paste an API token', hint: 'from console.anthropic.com/settings/keys' },
-  { id: 'oauth', label: 'run `claude setup-token` (browser OAuth)', hint: 'uses your existing subscription' },
+  { id: 'oauth', label: 'run provider OAuth/session login', hint: 'Anthropic OAuth or ChatGPT/Codex session' },
   { id: 'quit',  label: 'quit',                                     hint: 'esc or q any time' },
 ];
 

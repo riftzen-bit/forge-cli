@@ -60,7 +60,7 @@ function stripProviderPrefix(id: string): string {
 // falls back to the base model's pricing. Without this, variants silently
 // report $0 cost.
 function stripContextTag(id: string): string {
-  return id.replace(/[\[@].*$/, '');
+  return id.replace(/[[@].*$/, '');
 }
 
 export function formatCost(usd: number): string {

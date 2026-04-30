@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { sanitizeToolOutput, shouldShowOkPreview } from './toolFormat.js';
+import { formatToolSummary, sanitizeToolOutput, shouldShowOkPreview } from './toolFormat.js';
 
 describe('sanitizeToolOutput', () => {
   test('strips wrapping <tool_use_error> tags', () => {
@@ -42,5 +42,15 @@ describe('shouldShowOkPreview', () => {
   test('strips MCP and tag prefixes before lookup', () => {
     expect(shouldShowOkPreview('[sub1] Read')).toBe(false);
     expect(shouldShowOkPreview('mcp__forge-spawn__spawn_agent')).toBe(false);
+  });
+});
+
+describe('formatToolSummary', () => {
+  test('combines display name and compact args', () => {
+    expect(formatToolSummary('Read', { file_path: 'D:/Projects/cli/src/app.tsx' }, 'D:/Projects/cli')).toBe('Read src/app.tsx');
+  });
+
+  test('keeps command tools readable', () => {
+    expect(formatToolSummary('Bash', { command: 'bun test src/runtime/turnState.test.ts' }, 'D:/Projects/cli')).toBe('Bash bun test src/runtime/turnState.test.ts');
   });
 });

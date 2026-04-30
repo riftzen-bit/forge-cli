@@ -12,7 +12,7 @@ export async function versionCommand(): Promise<void> {
   console.log('providers:');
   for (const prov of PROVIDERS) {
     const marker = prov.id === p.id ? '*' : ' ';
-    const note = prov.nativeAnthropic ? '' : ' (needs proxy)';
+    const note = prov.keyAuth === false ? ' (session)' : prov.nativeAnthropic ? '' : ' (needs proxy)';
     console.log(`  ${marker} ${prov.id.padEnd(12)} ${prov.label}${note}`);
   }
   console.log('');

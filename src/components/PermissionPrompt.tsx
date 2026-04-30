@@ -73,16 +73,20 @@ export function PermissionPrompt({ tool, input, onPick }: Props) {
   const summary = summarize(tool, input);
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={t.warn} paddingX={1}>
-      <Text color={t.warn} bold>permission needed</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor={t.warn} paddingX={2} paddingY={0} marginTop={1}>
+      <Box>
+        <Text color={t.warn} bold>permission required</Text>
+        <Box flexGrow={1} />
+        <Text color={t.muted}>↑↓ move {`\u00B7`} enter pick {`\u00B7`} esc deny</Text>
+      </Box>
       <Box marginTop={1}>
-        <Text color={t.text}>tool: </Text>
+        <Text color={t.muted}>tool </Text>
         <Text color={t.accent} bold>{tool}</Text>
       </Box>
       {summary && (
         <Box>
-          <Text color={t.text}>arg:  </Text>
-          <Text color={t.muted} wrap="truncate-end">{summary}</Text>
+          <Text color={t.muted}>arg  </Text>
+          <Text color={t.text} wrap="truncate-end">{summary}</Text>
         </Box>
       )}
       <Box flexDirection="column" marginTop={1}>
@@ -90,15 +94,12 @@ export function PermissionPrompt({ tool, input, onPick }: Props) {
           const focused = i === idx;
           return (
             <Box key={c.key}>
-              <Text color={focused ? t.accent : t.muted}>{focused ? '> ' : '  '}</Text>
-              <Text color={focused ? t.accent : t.text} bold={focused}>{c.label.padEnd(24)}</Text>
+              <Text color={focused ? t.warn : t.muted} bold={focused}>{focused ? '› ' : '  '}</Text>
+              <Text color={focused ? t.text : t.text} bold={focused}>{c.label.padEnd(26)}</Text>
               <Text color={t.muted}>{c.hint}</Text>
             </Box>
           );
         })}
-      </Box>
-      <Box marginTop={1}>
-        <Text color={t.muted}>up/dn move, enter pick, esc = no</Text>
       </Box>
     </Box>
   );

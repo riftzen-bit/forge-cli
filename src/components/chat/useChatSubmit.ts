@@ -99,7 +99,7 @@ export function makeSubmit(deps: Deps) {
         },
         openModelPicker: () => deps.setPicker('model'),
         openProviderPicker: () => deps.setPicker('provider'),
-        openEffortPicker: () => deps.setPicker('effort'),
+        openEffortPicker: () => deps.setPicker(deps.client.getProvider() === 'chatgpt' ? 'thinking' : 'effort'),
         openResumePicker: () => deps.setPicker('resume'),
         runParallel: (tasks) => {
           void deps.commands.runParallel(tasks);
@@ -172,7 +172,7 @@ export function makeSubmit(deps: Deps) {
     let prompt = trimmed;
     try {
       const dataUrls = await extractDataUrlImages(trimmed);
-      let working = dataUrls.text;
+      const working = dataUrls.text;
       if (dataUrls.saved.length > 0) {
         for (const p of dataUrls.saved) deps.client.attachImage(p);
         deps.setHistory((m) => [

@@ -7,8 +7,11 @@ export type ProviderId =
   | 'kimi'
   | 'nvidia'
   | 'openai'
+  | 'chatgpt'
   | 'gemini'
   | 'custom';
+
+export type ProviderRuntime = 'anthropic-sdk' | 'codex-cli';
 
 export type Provider = {
   id: ProviderId;
@@ -17,6 +20,8 @@ export type Provider = {
   keyPrefixes?: string[];
   defaultModel: string;
   nativeAnthropic: boolean;
+  runtime?: ProviderRuntime;
+  keyAuth?: boolean;
   // True when an interactive browser-based OAuth flow is wired for this
   // provider. Today only Anthropic is supported (via `claude setup-token`).
   // The login UI uses this flag to gate the OAuth method choice — flipping
@@ -109,6 +114,18 @@ export const PROVIDERS: Provider[] = [
     notes: 'litellm --model openai/gpt-4o --api_key $OPENAI_API_KEY. Default port 4000.',
   },
   {
+    id: 'chatgpt',
+    label: 'ChatGPT / Codex',
+    baseURL: '',
+    defaultModel: 'gpt-5.5',
+    nativeAnthropic: false,
+    runtime: 'codex-cli',
+    keyAuth: false,
+    oauth: true,
+    hint: 'Official Codex CLI login. Uses your ChatGPT/Codex plan quota, not an OpenAI API key.',
+    notes: 'Requires Codex CLI on PATH. Sign in with: forge login --provider chatgpt --oauth.',
+  },
+  {
     id: 'gemini',
     label: 'Google Gemini (via proxy)',
     baseURL: 'http://localhost:4000',
@@ -136,10 +153,12 @@ export function getProvider(id: string): Provider | undefined {
 }
 
 export function providerFor(id: string): Provider {
-  return getProvider(id) ?? PROVIDERS[0]!;
+  const p = getProvider(id) ?? PROVIDERS[0]!;
+  return { runtime: 'anthropic-sdk', keyAuth: true, ...p };
 }
 
 export function validateKey(provider: Provider, key: string): { ok: true } | { ok: false; reason: string } {
+  if (provider.keyAuth === false) return { ok: false, reason: `${provider.label} uses session login, not API keys` };
   const trimmed = key.trim();
   if (!trimmed) return { ok: false, reason: 'empty key' };
   const prefixes = provider.keyPrefixes;

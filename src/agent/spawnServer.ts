@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AgentClient, type ToolStartEvent, type ToolResultEvent } from './client.js';
 import type { FileCoordinator } from './fileLocks.js';
 import type { Effort } from './effort.js';
+import type { Thinking } from './thinking.js';
 import type { ProviderConfig } from '../config/settings.js';
 import {
   EXPLORE_AGENT,
@@ -22,6 +23,7 @@ type SpawnServerOpts = {
   coordinator: FileCoordinator;
   getModel: () => string;
   getEffort: () => Effort;
+  getThinking: () => Thinking;
   getProvider?: () => string;
   getProviderConfig?: () => ProviderConfig;
   onEvent: (tag: string, ev: SpawnEvent) => void;
@@ -50,6 +52,7 @@ export function createSpawnServer(opts: SpawnServerOpts): SpawnServerBundle {
     const clientOpts: ConstructorParameters<typeof AgentClient>[0] = {
       model: opts.getModel(),
       effort: opts.getEffort(),
+      thinking: opts.getThinking(),
       locks: opts.coordinator,
       agentTag: tag,
     };

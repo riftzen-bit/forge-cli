@@ -31,7 +31,9 @@ export function makeHandleStatus(ctx: CommandCtx) {
       '',
       `  model:      ${labelFor(ctx.getActiveModel())}  (${ctx.getActiveModel()})`,
       `  provider:   ${p.label}  ${baseURL}`,
-      `  effort:     ${ctx.getActiveEffort()}`,
+      p.runtime === 'codex-cli'
+        ? `  thinking:   ${ctx.getThinking()}`
+        : `  effort:     ${ctx.getActiveEffort()}`,
       `  perm mode:  ${ctx.getPermissionMode()}`,
       `  auth:       ${badge.label}`,
       `  cwd:        ${ctx.cwd}`,

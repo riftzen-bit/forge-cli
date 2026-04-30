@@ -5,7 +5,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { getTheme } from '../../ui/theme.js';
-import { displayName, prettyArgs } from '../toolFormat.js';
+import { formatToolSummary } from '../toolFormat.js';
 import { useTick, SPINNER_FRAMES } from './useTick.js';
 import { G } from '../../ui/glyphs.js';
 import type { ActiveTool } from './types.js';
@@ -22,8 +22,7 @@ type RowProps = {
 
 function ActiveToolRow({ tool, elapsed, spinnerFrame, cwd, showSpinner }: RowProps) {
   const t = getTheme();
-  const name = displayName(tool.name);
-  const args = prettyArgs(tool.name, tool.input, cwd);
+  const summary = formatToolSummary(tool.name, tool.input, cwd);
   const prefix = tool.tag ? `[${tool.tag}] ` : '';
   return (
     <Box>
@@ -35,14 +34,8 @@ function ActiveToolRow({ tool, elapsed, spinnerFrame, cwd, showSpinner }: RowPro
         )}
         <Text> </Text>
         {prefix && <Text color={t.accentDim}>{prefix}</Text>}
-        <Text color={t.toolTag} bold>{name}</Text>
-        {args && (
-          <>
-            <Text color={t.muted}>  </Text>
-            <Text color={t.text}>{args}</Text>
-          </>
-        )}
-        <Text color={t.muted}>  {G.bullet}  {elapsed}s</Text>
+        <Text color={t.text}>{summary}</Text>
+        <Text color={t.muted}>  {G.bullet} {elapsed}s</Text>
       </Text>
     </Box>
   );
@@ -92,7 +85,7 @@ export function ActiveToolsPanel({ tools, cwd, verbose }: Props) {
       ))}
       {hidden > 0 && (
         <Box>
-          <Text color={t.muted}>  {G.ellipsis} +{hidden} tool{hidden === 1 ? '' : 's'} (ctrl+o expand)</Text>
+          <Text color={t.muted}>  {G.ellipsis} +{hidden} tool{hidden === 1 ? '' : 's'}</Text>
         </Box>
       )}
     </Box>

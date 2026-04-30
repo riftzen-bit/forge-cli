@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   PERMISSION_MODES,
   DEFAULT_PERMISSION_MODE,
+  DEFAULT_THINKING,
   nextPermissionMode,
   type PermissionMode,
 } from './settings.js';
@@ -29,5 +30,11 @@ describe('nextPermissionMode', () => {
     let m: PermissionMode = 'default';
     for (let i = 0; i < PERMISSION_MODES.length; i++) m = nextPermissionMode(m);
     expect(m).toBe('default');
+  });
+});
+
+describe('ChatGPT thinking setting', () => {
+  test('defaults ChatGPT thinking to medium', () => {
+    expect(DEFAULT_THINKING).toBe('Medium');
   });
 });

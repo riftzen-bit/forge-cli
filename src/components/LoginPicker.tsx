@@ -56,12 +56,21 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
 
   const methodOptions: { id: Method; label: string; hint: string }[] = provider.oauth
     ? [
-        { id: 'oauth',  label: 'OAuth (browser)', hint: 'opens claude setup-token in your browser' },
-        { id: 'apikey', label: 'API key',         hint: 'paste a static key from the dashboard' },
+        {
+          id: 'oauth',
+          label: provider.runtime === 'codex-cli' ? 'ChatGPT/Codex login' : 'OAuth (browser)',
+          hint: provider.runtime === 'codex-cli' ? 'runs codex login' : 'opens claude setup-token in your browser',
+        },
+        ...(provider.keyAuth === false ? [] : [{ id: 'apikey' as const, label: 'API key', hint: 'paste a static key from the dashboard' }]),
       ]
     : [{ id: 'apikey', label: 'API key', hint: 'paste a static key from the dashboard' }];
 
   function startInputForKey(): void {
+    if (provider.keyAuth === false) {
+      setAckCursor('cancel');
+      setPhase('ack');
+      return;
+    }
     if (provider.id === 'custom' || !provider.nativeAnthropic) {
       setBaseURL(provider.baseURL);
       setPhase('baseurl');
@@ -85,7 +94,7 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
   }
 
   async function ackContinue(): Promise<void> {
-    // Anthropic: exit Ink, run `claude setup-token`, restart. Persist
+    // OAuth/session handoff: exit Ink, run provider CLI login, restart. Persist
     // activeProvider first so re-launch lands on anthropic — must await
     // so the write is flushed before we tear down Ink and re-exec.
     await saveSettings({ activeProvider: provider.id });
@@ -204,7 +213,10 @@ export function LoginPicker({ initialProvider, onDone, onCancel, onRequestOAuth 
     }
   }
 
-  function authChip(p: { oauth: boolean }): React.ReactElement {
+  function authChip(p: { oauth: boolean; keyAuth?: boolean }): React.ReactElement {
+    if (p.keyAuth === false) {
+      return <Text color={t.success} backgroundColor={t.selection} bold> Session </Text>;
+    }
     return p.oauth ? (
       <Text color={t.success} backgroundColor={t.selection} bold> OAuth </Text>
     ) : (

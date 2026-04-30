@@ -31,7 +31,8 @@ export function ProviderSelector({ current, hasKey, onSelect, onCancel }: Props)
           const focused = i === idx;
           const active = p.id === current;
           const key = hasKey(p.id);
-          const warn = !p.nativeAnthropic;
+          const session = p.keyAuth === false;
+          const warn = !p.nativeAnthropic && p.runtime !== 'codex-cli';
           return (
             <Box key={p.id}>
               <Text color={focused ? t.accent : t.muted}>
@@ -41,7 +42,9 @@ export function ProviderSelector({ current, hasKey, onSelect, onCancel }: Props)
                 {p.label.padEnd(18)}
               </Text>
               <Text color={t.muted}>{p.id.padEnd(12)}</Text>
-              {key ? (
+              {session ? (
+                <Text color={key ? t.success : t.error}>{key ? 'session ' : 'no-session '}</Text>
+              ) : key ? (
                 <Text color={t.success}>key </Text>
               ) : (
                 <Text color={t.error}>no-key </Text>

@@ -6,8 +6,21 @@ import { getTheme } from '../ui/theme.js';
 import { baseToolName, displayName, sanitizeToolOutput, shouldShowOkPreview } from './toolFormat.js';
 import { Markdown } from './Markdown.js';
 import { G } from '../ui/glyphs.js';
+import { CellMarker } from './ui/CellMarker.js';
 
-type Props = { message: ChatMessage; verbose?: boolean };
+type Props = {
+  message: ChatMessage;
+  verbose?: boolean;
+  isCellHead?: boolean;
+};
+
+// Indent for content rows under a role marker. 4 spaces ≈ width of the role
+// glyph + space + "you|forge|step" — narrow enough to keep wrapped paragraph
+// width sane on 80-col terminals.
+const CELL_INDENT = 4;
+// Tool body rows nest one extra indent under the tool summary line so the
+// "└ preview" tree continuation stays visually inside the tool.
+const TOOL_BODY_INDENT = CELL_INDENT + 2;
 
 function tagOf(tool: string): string | undefined {
   const m = tool.match(/^\[([^\]]+)\]/);
@@ -54,44 +67,31 @@ function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-// Tool-row durations skip sub-second timings entirely — those are noise in
-// the transcript. Shell rows keep ms because the user invoked the command
-// and wants concrete feedback even on fast commands.
 function formatToolMs(ms: number): string {
   if (ms < 1000) return '';
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-// Strip leading `N->` line-number gutter that Read emits, and truncate to 1 line.
 function cleanPreview(s: string): string {
   const sanitized = sanitizeToolOutput(s);
   const first = sanitized.split(/\r?\n/, 1)[0] ?? '';
   const stripped = first.replace(/^\s*\d+\s*(?:→|->)\s*/, '');
-  // Truncate by code points so the slice can't split a surrogate pair
-  // (which would render as a replacement glyph).
   const cps = Array.from(stripped);
   return cps.length > 120 ? cps.slice(0, 117).join('') + '...' : stripped;
 }
 
-export const MessageRow = memo(function MessageRow({ message: m, verbose = false }: Props) {
+export const MessageRow = memo(function MessageRow({
+  message: m,
+  verbose = false,
+  isCellHead = true,
+}: Props) {
   const t = getTheme();
 
   if (m.role === 'user') {
     return (
-      <Box flexDirection="column" marginBottom={1} marginTop={1}>
-        <Box>
-          <Text color={t.info} bold>{G.prefixYou} </Text>
-          <Text color={t.info} bold>you</Text>
-        </Box>
-        <Box
-          borderStyle="single"
-          borderLeft
-          borderTop={false}
-          borderRight={false}
-          borderBottom={false}
-          borderColor={t.info}
-          paddingLeft={1}
-        >
+      <Box flexDirection="column" marginTop={1}>
+        <CellMarker kind="user" />
+        <Box paddingLeft={CELL_INDENT}>
           <Text color={t.text}>{m.text}</Text>
         </Box>
       </Box>
@@ -99,20 +99,9 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
   }
   if (m.role === 'assistant') {
     return (
-      <Box flexDirection="column" marginBottom={1} marginTop={1}>
-        <Box>
-          <Text color={t.accent} bold>{G.prefixForge} </Text>
-          <Text color={t.accent} bold>forge</Text>
-        </Box>
-        <Box
-          borderStyle="single"
-          borderLeft
-          borderTop={false}
-          borderRight={false}
-          borderBottom={false}
-          borderColor={t.accent}
-          paddingLeft={1}
-        >
+      <Box flexDirection="column" marginTop={isCellHead ? 1 : 0}>
+        {isCellHead && <CellMarker kind="assistant" />}
+        <Box paddingLeft={CELL_INDENT}>
           <Markdown text={m.text} color={t.text} />
         </Box>
       </Box>
@@ -121,23 +110,11 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
   if (m.role === 'thinking') {
     const display = verbose ? m.text : m.text.length > 800 ? m.text.slice(0, 800) + '...' : m.text;
     return (
-      <Box
-        flexDirection="column"
-        marginBottom={1}
-        borderStyle="single"
-        borderLeft
-        borderTop={false}
-        borderRight={false}
-        borderBottom={false}
-        borderColor={t.muted}
-        paddingLeft={1}
-      >
-        <Box>
-          <Text color={t.muted}>{G.diamondHollow} </Text>
-          <Text color={t.muted} bold>thought</Text>
-          <Text color={t.muted}>  {G.bullet}  {m.text.length} chars</Text>
+      <Box flexDirection="column" marginTop={isCellHead ? 1 : 0}>
+        {isCellHead && <CellMarker kind="step" meta="reasoning" />}
+        <Box paddingLeft={CELL_INDENT}>
+          <Text color={t.muted} italic>{display}</Text>
         </Box>
-        <Text color={t.muted} italic>{display}</Text>
       </Box>
     );
   }
@@ -146,7 +123,6 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     const tag = tagOf(m.tool);
     const tagPrefix = tag ? `[${tag}] ` : '';
     const diff = toolDiff(m.tool, m.input);
-    const name = displayName(m.tool);
 
     let stats = '';
     if (diff && base === 'Edit') {
@@ -158,46 +134,47 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     }
 
     const args = m.text ?? '';
+    const name = displayName(m.tool);
+    const summary = args ? `${name} ${args}` : name;
     const dur = m.ms !== undefined ? formatToolMs(m.ms) : '';
-    // Suppress success preview for tools whose args/stats already convey
-    // what happened (Read/Edit/Write/Todos/etc). Bash/Grep/Glob/Web* keep
-    // the preview because the output IS the artifact the user wants to see.
     const showOkPreview = m.status === 'ok' && m.output && !diff && (verbose || shouldShowOkPreview(m.tool));
+    // Write to a brand-new file: showing the diff is just dumping the file.
+    // Collapse to a one-line summary unless verbose. Edit still shows the
+    // diff because the changes ARE the signal.
+    const isFreshWrite = base === 'Write' && diff !== null && diff.old === '';
+    const showDiff = diff !== null && (base === 'Edit' || (base === 'Write' && verbose && !isFreshWrite));
 
     return (
-      <Box flexDirection="column">
-        <Box>
+      <Box flexDirection="column" marginTop={isCellHead ? 1 : 0}>
+        {isCellHead && <CellMarker kind="step" meta="tool" />}
+        <Box paddingLeft={CELL_INDENT}>
           {statusGlyph(m.status, t)}
           <Text> </Text>
           {tagPrefix && <Text color={t.accentDim}>{tagPrefix}</Text>}
-          <Text color={t.toolTag} bold>{name}</Text>
-          {args && (
-            <>
-              <Text color={t.muted}>  </Text>
-              <Text color={t.text}>{args}</Text>
-            </>
-          )}
+          <Text color={t.text}>{summary}</Text>
           {stats && <Text color={t.accentDim}>  {stats}</Text>}
           {dur && <Text color={t.muted}>  {G.bullet}  {dur}</Text>}
         </Box>
-        {diff && (base === 'Edit' || base === 'Write') && (
-          <Diff oldText={diff.old} newText={diff.next} verbose={verbose} />
+        {showDiff && diff && (
+          <Box paddingLeft={CELL_INDENT}>
+            <Diff oldText={diff.old} newText={diff.next} verbose={verbose} />
+          </Box>
         )}
         {verbose && !diff && (
-          <Box flexDirection="column" paddingLeft={2}>
+          <Box flexDirection="column" paddingLeft={TOOL_BODY_INDENT}>
             {formatToolInput(m.input).map((line, j) => (
               <Text key={j} color={t.muted}>{line}</Text>
             ))}
           </Box>
         )}
         {showOkPreview && (
-          <Box paddingLeft={2}>
-            <Text color={t.muted}>{`  ${G.branchEnd} `}{cleanPreview(m.output!)}</Text>
+          <Box paddingLeft={TOOL_BODY_INDENT}>
+            <Text color={t.muted}>{G.branchEnd} {cleanPreview(m.output!)}</Text>
           </Box>
         )}
         {m.status === 'err' && m.output && (
-          <Box paddingLeft={2}>
-            <Text color={t.error}>{`  ${G.branchEnd} `}{cleanPreview(m.output)}</Text>
+          <Box paddingLeft={TOOL_BODY_INDENT}>
+            <Text color={t.error}>{G.branchEnd} {cleanPreview(m.output)}</Text>
           </Box>
         )}
       </Box>
@@ -215,22 +192,14 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     const visibleErr = errLines.slice(0, verbose ? 60 : 10);
     const hiddenErr = errLines.length - visibleErr.length;
     return (
-      <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Box>
+      <Box flexDirection="column" marginTop={isCellHead ? 1 : 0}>
+        {isCellHead && <CellMarker kind="step" meta="shell" />}
+        <Box paddingLeft={CELL_INDENT}>
           <Text color={ok ? t.success : t.error} bold>$ </Text>
           <Text color={t.text}>{m.command}</Text>
           <Text color={t.muted}>  exit {m.code}  {formatMs(m.ms)}</Text>
         </Box>
-        <Box
-          flexDirection="column"
-          borderStyle="single"
-          borderLeft
-          borderTop={false}
-          borderRight={false}
-          borderBottom={false}
-          borderColor={ok ? t.muted : t.error}
-          paddingLeft={1}
-        >
+        <Box flexDirection="column" paddingLeft={TOOL_BODY_INDENT}>
           {visibleOut.map((ln, i) => (
             <Text key={`o${i}`} color={t.text}>{ln || ' '}</Text>
           ))}
@@ -254,7 +223,7 @@ export const MessageRow = memo(function MessageRow({ message: m, verbose = false
     return (
       <Box flexDirection="column">
         {m.text.split(/\r?\n/).map((ln, i) => (
-          <Text key={i} color={t.muted}>{i === 0 ? `${G.bullet} ` : '  '}{ln}</Text>
+          <Text key={i} color={t.muted}>{`# ${ln}`}</Text>
         ))}
       </Box>
     );

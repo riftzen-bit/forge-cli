@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { CONFIG_DIR } from './paths.js';
 import { DEFAULT_PROVIDER, type ProviderId } from '../agent/providers.js';
+import { hasCodexLogin } from '../auth/codexCli.js';
 
 const TOKEN_FILENAME = '.forge-token';
 const KEYS_FILENAME = 'keys.json';
@@ -132,6 +133,7 @@ export async function clearProviderKey(provider: ProviderId | string): Promise<v
 export async function listProviderKeys(): Promise<string[]> {
   const providers: string[] = [];
   if (await hasToken()) providers.push(DEFAULT_PROVIDER);
+  if (hasCodexLogin()) providers.push('chatgpt');
   const store = await readKeyStore();
   for (const id of Object.keys(store)) {
     if (id !== DEFAULT_PROVIDER) providers.push(id);

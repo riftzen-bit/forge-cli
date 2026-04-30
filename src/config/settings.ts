@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CONFIG_DIR, SETTINGS_PATH } from './paths.js';
 import { DEFAULT_MODEL } from '../agent/models.js';
 import { DEFAULT_EFFORT, EFFORT_LEVELS } from '../agent/effort.js';
+import { DEFAULT_THINKING, THINKING_LEVELS } from '../agent/thinking.js';
 import { DEFAULT_PROVIDER } from '../agent/providers.js';
 
 export const PERMISSION_MODES = ['default', 'autoAccept', 'plan', 'yolo'] as const;
@@ -42,6 +43,7 @@ const ProviderConfigSchema = z.object({
 const SettingsSchema = z.object({
   defaultModel: z.string().default(DEFAULT_MODEL),
   effort: z.enum(EFFORT_LEVELS).default(DEFAULT_EFFORT),
+  thinking: z.enum(THINKING_LEVELS).default(DEFAULT_THINKING),
   theme: z.enum(['dark', 'light']).default('dark'),
   telemetry: z.boolean().default(false),
   statusLine: z.string().optional(),
@@ -79,6 +81,7 @@ export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 const DEFAULTS: Settings = {
   defaultModel: DEFAULT_MODEL,
   effort: DEFAULT_EFFORT,
+  thinking: DEFAULT_THINKING,
   theme: 'dark',
   telemetry: false,
   activeProvider: DEFAULT_PROVIDER,
@@ -125,3 +128,5 @@ export async function saveSettings(next: Partial<Settings>): Promise<Settings> {
 }
 
 export { CONFIG_DIR };
+
+export { DEFAULT_THINKING };

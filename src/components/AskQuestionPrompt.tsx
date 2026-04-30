@@ -167,9 +167,15 @@ export function AskQuestionPrompt({ questions, onAnswer }: Props) {
 
   if (phase === 'other') {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={t.info} paddingX={1}>
-        <Text color={t.muted}>{headerLine}</Text>
-        <Text color={t.info} bold>{current.question}</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor={t.info} paddingX={2} marginTop={1}>
+        <Box>
+          <Text color={t.info} bold>question</Text>
+          <Box flexGrow={1} />
+          <Text color={t.muted}>{headerLine}</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text color={t.text}>{current.question}</Text>
+        </Box>
         <Box marginTop={1}>
           <Text color={t.text}>your answer: </Text>
           <SimpleTextInput
@@ -199,9 +205,15 @@ export function AskQuestionPrompt({ questions, onAnswer }: Props) {
   }
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={t.info} paddingX={1}>
-      <Text color={t.muted}>{headerLine}</Text>
-      <Text color={t.info} bold>{current.question}</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor={t.info} paddingX={2} marginTop={1}>
+      <Box>
+        <Text color={t.info} bold>question</Text>
+        <Box flexGrow={1} />
+        <Text color={t.muted}>{headerLine}</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color={t.text}>{current.question}</Text>
+      </Box>
       <Box flexDirection="column" marginTop={1}>
         {items.map((opt, i) => {
           const isFocused = i === idx;

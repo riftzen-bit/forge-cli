@@ -10,6 +10,7 @@ import type { AgentPool } from '../../../agent/pool.js';
 import type { FileCoordinator } from '../../../agent/fileLocks.js';
 import type { TodoStore } from '../../../agent/todos.js';
 import type { Effort } from '../../../agent/effort.js';
+import type { Thinking } from '../../../agent/thinking.js';
 import type { Settings, PermissionMode } from '../../../config/settings.js';
 import type { AuthStatus } from '../../../auth/status.js';
 import type { InputHistory } from '../../../agent/inputHistory.js';
@@ -34,6 +35,7 @@ export type CommandCtx = {
   // State getters (read current value even from old closures)
   getActiveModel: () => string;
   getActiveEffort: () => Effort;
+  getThinking: () => Thinking;
   getActiveProvider: () => string;
   getPermissionMode: () => PermissionMode;
   getTokens: () => number;
@@ -41,6 +43,7 @@ export type CommandCtx = {
   // State setters
   setActiveModel: (id: string) => void;
   setActiveEffort: (e: Effort) => void;
+  setActiveThinking: (t: Thinking) => void;
   setActiveProvider: (id: string) => void;
   setPermissionMode: (m: PermissionMode) => void;
   setTokens: (n: number) => void;

@@ -43,7 +43,7 @@ import type { SessionSummary } from '../../session/store.js';
 import type { Effort } from '../../agent/effort.js';
 
 export type ChatCommands = {
-  applyModel: (id: string) => Promise<void>;
+  applyModel: (id: string, nextPicker?: 'none' | 'thinking') => Promise<void>;
   applyEffort: (e: Effort) => Promise<void>;
   applyResume: (s: SessionSummary) => Promise<void>;
   applyProvider: (id: string) => Promise<void>;

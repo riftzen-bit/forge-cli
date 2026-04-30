@@ -49,6 +49,11 @@ export const MODELS: ModelEntry[] = [
   { id: 'o1',          label: 'o1',          provider: 'openai' },
   { id: 'o3-mini',     label: 'o3-mini',     provider: 'openai' },
 
+
+  { id: 'gpt-5.5',      label: 'GPT-5.5',      provider: 'chatgpt', contextWindow: MILLION_CTX },
+  { id: 'gpt-5.4',      label: 'GPT-5.4',      provider: 'chatgpt', contextWindow: MILLION_CTX },
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini', provider: 'chatgpt', contextWindow: DEFAULT_CTX },
+
   { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',   provider: 'gemini', contextWindow: MILLION_CTX },
   { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash', provider: 'gemini', contextWindow: MILLION_CTX },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Lite',  provider: 'gemini', contextWindow: MILLION_CTX },

@@ -96,7 +96,6 @@ export function useStreamState(
     return () => clearInterval(id);
     // streamingText intentionally excluded: reading it inside the effect
     // would re-create the interval on every flush.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy]);
 
   // Flush subagent previews. On busy false, clear the whole map.

@@ -10,6 +10,7 @@
 
 import { loadUpstreamMany, type UpstreamId } from './upstream/loader.js';
 import type { Effort } from '../agent/effort.js';
+import { DESIGN_TASTE } from './features/design-taste.js';
 
 export type DynamicContext = {
   // Permission mode. 'plan' triggers the enhanced plan-mode prompt.
@@ -24,13 +25,25 @@ export type DynamicContext = {
   isSubagent?: boolean;
 };
 
-// Always-on extras Forge has not folded into curated TS exports yet. Light
-// pieces; the cost of including them is well under a 5% bump on the base
-// prompt and they encode common failure modes the curated pieces don't.
-const ALWAYS_ON: readonly UpstreamId[] = [
-  'parallel-tool-call-note',
-  'tone-and-style-code-refs',
-  'censoring-malicious',
+// Always-on extras Forge has not folded into curated TS exports yet.
+// Empty by default after the 2026-04 prompt audit: the previous always-on
+// trio (`parallel-tool-call-note`, `tone-and-style-code-refs`,
+// `censoring-malicious`) duplicated content already covered by the
+// curated TOOLS_GENERAL / TONE_AND_STYLE / SECURITY_HEADER blocks.
+const ALWAYS_ON: readonly UpstreamId[] = [];
+
+// Inline pieces that get appended verbatim (no upstream file). Keyed by
+// regex against the current user message so they only ship for relevant
+// turns. Keep these short — anything load-bearing belongs in the base
+// prompt instead.
+const INLINE_TRIGGERS: ReadonlyArray<{ pattern: RegExp; content: string }> = [
+  // UI / design work — DESIGN_TASTE used to be always-on at ~1.2KB.
+  // Trigger on the keywords the model is most likely to surface those
+  // rules for. Backend / CLI / infra turns no longer pay the cost.
+  {
+    pattern: /\b(ui|ux|design|css|html|jsx|tsx|tailwind|styled[- ]?components|figma|landing(?:[- ]page)?|component|page|layout|theme|palette|wireframe)\b/i,
+    content: DESIGN_TASTE,
+  },
 ];
 
 // Maps a regex match against the user's most recent message → pieces to add.
@@ -78,7 +91,15 @@ export async function buildDynamicExtras(ctx: DynamicContext): Promise<string> {
     ids.delete('writing-subagent-prompts');
   }
 
-  if (ids.size === 0) return '';
-  const pieces = await loadUpstreamMany([...ids]);
-  return pieces.join('\n\n');
+  const upstream = ids.size === 0 ? [] : await loadUpstreamMany([...ids]);
+
+  const inline: string[] = [];
+  if (ctx.recentUserText) {
+    for (const t of INLINE_TRIGGERS) {
+      if (t.pattern.test(ctx.recentUserText)) inline.push(t.content);
+    }
+  }
+
+  const all = [...upstream, ...inline];
+  return all.join('\n\n');
 }

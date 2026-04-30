@@ -11,10 +11,10 @@ import type { Effort } from '../../../agent/effort.js';
 import type { CommandCtx } from './ctx.js';
 
 export function makeApplyModel(ctx: CommandCtx) {
-  return async (id: string): Promise<void> => {
+  return async (id: string, nextPicker: 'none' | 'thinking' = 'none'): Promise<void> => {
     ctx.client.setModel(id);
     ctx.setActiveModel(id);
-    ctx.setPicker('none');
+    ctx.setPicker(nextPicker);
     ctx.appendHistory({ role: 'system', text: `model -> ${labelFor(id)}` });
     try {
       await saveSettings({ defaultModel: id });
@@ -79,12 +79,14 @@ export function makeApplyProvider(ctx: CommandCtx) {
     } catch {
       /* best-effort */
     }
-    const hasKey = ctx.providerKeys.has(id);
+    const hasAuth = ctx.providerKeys.has(id);
     const lines: string[] = [`provider -> ${p.label}`];
-    if (!hasKey) {
-      lines.push(`no key for ${p.label}. run outside chat: forge login --provider ${id}`);
+    if (!hasAuth) {
+      const authName = p.keyAuth === false ? 'session' : 'key';
+      const oauth = p.keyAuth === false ? ' --oauth' : '';
+      lines.push(`no ${authName} for ${p.label}. run outside chat: forge login --provider ${id}${oauth}`);
     }
-    if (!p.nativeAnthropic && !cfg.baseURL && !p.baseURL) {
+    if (p.runtime !== 'codex-cli' && !p.nativeAnthropic && !cfg.baseURL && !p.baseURL) {
       lines.push(`needs proxy URL. run: forge set baseurl <url> --provider ${id}`);
     }
     ctx.appendHistory({ role: 'system', text: lines.join('\n') });

@@ -160,7 +160,6 @@ export function ModelSelector({ current, onSelect, onCancel, providerKeys, activ
     } else if (clamped !== cursor) {
       setCursor(clamped);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
   function moveCursor(delta: 1 | -1): void {

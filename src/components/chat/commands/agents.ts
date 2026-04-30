@@ -31,6 +31,7 @@ export function makeRunTaskWith(ctx: CommandCtx) {
         {
           model: ctx.getActiveModel(),
           effort: ctx.getActiveEffort(),
+          thinking: ctx.getThinking(),
           locks: ctx.coordinator,
           agentTag: tag,
           provider: ctx.getActiveProvider(),
@@ -63,6 +64,7 @@ export function makeRunTask(ctx: CommandCtx) {
         {
           model: ctx.getActiveModel(),
           effort: ctx.getActiveEffort(),
+          thinking: ctx.getThinking(),
           locks: ctx.coordinator,
           provider: ctx.getActiveProvider(),
           providerConfig: providerCfg,
@@ -99,6 +101,7 @@ export function makeRunParallel(ctx: CommandCtx) {
         {
           model: ctx.getActiveModel(),
           effort: ctx.getActiveEffort(),
+          thinking: ctx.getThinking(),
           provider: ctx.getActiveProvider(),
           providerConfig: providerCfg,
         },
@@ -219,6 +222,7 @@ export function makeHandleCommit(ctx: CommandCtx) {
         {
           model: ctx.getActiveModel(),
           effort: ctx.getActiveEffort(),
+          thinking: ctx.getThinking(),
           locks: ctx.coordinator,
           agentTag: 'commit',
           provider: ctx.getActiveProvider(),

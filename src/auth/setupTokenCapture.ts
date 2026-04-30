@@ -10,7 +10,7 @@ export type CaptureResult =
 // Matching that prefix avoids grabbing unrelated `sk-ant-` strings (e.g. an
 // error message referring to an old API key) that may be interleaved in the
 // captured output.
-const TOKEN_PATTERN = /sk-ant-oat0?[A-Za-z0-9_\-]{20,}/;
+const TOKEN_PATTERN = /sk-ant-oat0?[A-Za-z0-9_-]{20,}/;
 
 export async function runSetupTokenCapture(): Promise<CaptureResult> {
   const bin = findClaudeCodeBin();

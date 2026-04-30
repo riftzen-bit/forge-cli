@@ -4,27 +4,33 @@ import { saveToken, primaryTokenPath, saveProviderKey } from '../config/tokenSto
 import { runSetupTokenCapture } from '../auth/setupTokenCapture.js';
 import { PROVIDERS, DEFAULT_PROVIDER, providerFor, validateKey } from '../agent/providers.js';
 import { saveSettings, loadSettings } from '../config/settings.js';
+import { runCodexLogin } from '../auth/codexCli.js';
 
 type LoginOpts = {
   oauth?: boolean;
   provider?: string;
+  deviceAuth?: boolean;
 };
 
 export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
   if (opts.oauth) {
-    // --oauth previously ran the Anthropic flow regardless of --provider,
-    // silently ignoring the provider id. That hid the fact that no other
-    // provider has an OAuth flow wired. Surface it explicitly instead.
-    if (opts.provider) {
-      const target = providerFor(opts.provider);
-      if (!target.oauth) {
-        console.error(
-          `oauth login is not available for provider "${target.id}". ` +
-          `Today only Anthropic supports OAuth. Run: forge login --provider ${target.id} (API key)`,
-        );
-        process.exitCode = 1;
-        return;
-      }
+    // Route OAuth/session login by provider so Anthropic keeps the Claude
+    // setup-token flow while ChatGPT uses official Codex CLI login.
+    const settings = await loadSettings();
+    const target = providerFor(opts.provider ?? settings.activeProvider ?? DEFAULT_PROVIDER);
+    if (target.runtime === 'codex-cli') {
+      await saveSettings({ activeProvider: target.id });
+      const code = runCodexLogin({ deviceAuth: opts.deviceAuth });
+      if (code !== 0) process.exitCode = code;
+      return;
+    }
+    if (!target.oauth) {
+      console.error(
+        `oauth login is not available for provider "${target.id}". ` +
+        `Run: forge login --provider ${target.id} (API key)`,
+      );
+      process.exitCode = 1;
+      return;
     }
     const r = await runSetupTokenCapture();
     if (!r.ok) {
@@ -45,7 +51,8 @@ function printProviderList(): void {
   output.write('\navailable providers:\n');
   for (const p of PROVIDERS) {
     const native = p.nativeAnthropic ? '' : ' (needs proxy)';
-    output.write(`  ${p.id.padEnd(12)} ${p.label}${native}\n`);
+    const auth = p.keyAuth === false ? ' (session)' : native;
+    output.write(`  ${p.id.padEnd(12)} ${p.label}${auth}\n`);
   }
   output.write('\n');
 }
@@ -56,6 +63,13 @@ async function providerFlow(providerId: string): Promise<void> {
     console.error(`unknown provider: ${providerId}`);
     printProviderList();
     process.exitCode = 1;
+    return;
+  }
+
+  if (provider.keyAuth === false) {
+    await saveSettings({ activeProvider: provider.id });
+    const code = runCodexLogin();
+    if (code !== 0) process.exitCode = code;
     return;
   }
 
@@ -122,7 +136,7 @@ async function pasteFlow(): Promise<void> {
         'Forge -- token setup (Anthropic)',
         '',
         '  Use --provider <id> to login to another provider.',
-        '  Providers: anthropic, openrouter, deepseek, zai, glm, kimi, nvidia, openai, custom.',
+        '  Providers: anthropic, openrouter, deepseek, zai, glm, kimi, nvidia, openai, chatgpt, custom.',
         '',
         '  1. Visit https://console.anthropic.com/settings/keys',
         '  2. Create or copy an API key that starts with "sk-ant-".',

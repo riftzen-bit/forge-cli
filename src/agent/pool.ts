@@ -1,6 +1,7 @@
 import { AgentClient } from './client.js';
 import { FileCoordinator } from './fileLocks.js';
 import type { Effort } from './effort.js';
+import type { Thinking } from './thinking.js';
 import type { ProviderConfig } from '../config/settings.js';
 
 export type PoolEvent =
@@ -14,6 +15,7 @@ export type PoolEvent =
 export type PoolConfig = {
   model: string;
   effort: Effort;
+  thinking?: Thinking;
   provider?: string;
   providerConfig?: ProviderConfig;
 };
@@ -41,6 +43,7 @@ export class AgentPool {
       const clientOpts: ConstructorParameters<typeof AgentClient>[0] = {
         model: config.model,
         effort: config.effort,
+        thinking: config.thinking,
         locks: this.locks,
         agentTag: tag,
       };

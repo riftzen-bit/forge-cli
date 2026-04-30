@@ -5,10 +5,14 @@ import { App } from './app.js';
 import { loginCommand } from './commands/login.js';
 import { versionCommand } from './commands/version.js';
 import { configCommand } from './commands/config.js';
+import { runDoctor } from './commands/doctor.js';
 import { registerSetCommand } from './commands/set.js';
 import { loadSettings } from './config/settings.js';
 import { runSetupTokenCapture } from './auth/setupTokenCapture.js';
+import { runCodexLogin } from './auth/codexCli.js';
 import { handleFatal } from './utils/errors.js';
+import { App as RuntimeApp } from './ui/ink/App.js';
+import { pendingToolSmokeEvents, runRuntimeTurn } from './runtime/bootstrap.js';
 
 process.on('uncaughtException', handleFatal);
 process.on('unhandledRejection', handleFatal);
@@ -34,9 +38,10 @@ program
 program
   .command('login')
   .description('Save API key for a provider.')
-  .option('--oauth', 'run `claude setup-token` and capture the printed token')
-  .option('--provider <id>', 'provider: anthropic | openrouter | deepseek | zai | glm | kimi | nvidia | openai | custom')
-  .action((opts: { oauth?: boolean; provider?: string }) => loginCommand(opts));
+  .option('--oauth', 'run provider OAuth login (Anthropic or ChatGPT/Codex)')
+  .option('--device-auth', 'use Codex device-code login when paired with --provider chatgpt --oauth')
+  .option('--provider <id>', 'provider: anthropic | openrouter | deepseek | zai | glm | kimi | nvidia | openai | chatgpt | custom')
+  .action((opts: { oauth?: boolean; provider?: string; deviceAuth?: boolean }) => loginCommand(opts));
 
 registerSetCommand(program);
 
@@ -53,6 +58,30 @@ program
   .action(versionCommand);
 
 program
+  .command('doctor')
+  .description('Print environment diagnostics.')
+  .action(async () => {
+    console.log(await runDoctor());
+  });
+
+program
+  .command('runtime-smoke', { hidden: true })
+  .description('Render the experimental runtime/UI vertical slice.')
+  .argument('[prompt...]', 'smoke prompt words')
+  .option('--tool', 'emit a pending no-op tool request')
+  .action(async (words: string[], opts: { tool?: boolean }) => {
+    const prompt = words.join(' ').trim() || 'Smoke test the runtime path';
+    const result = await runRuntimeTurn({
+      prompt,
+      modelEvents: opts.tool ? pendingToolSmokeEvents() : undefined,
+    });
+    const instance = render(<RuntimeApp snapshot={result.state} />);
+    // Yield one tick so Ink can flush stdout before unmounting the smoke UI.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    instance.unmount();
+  });
+
+program
   .command('chat', { isDefault: true })
   .description('Start interactive coding session (default). Positional arg = one-shot prompt.')
   .argument('[prompt...]', 'one-shot prompt words; omit for interactive')
@@ -66,10 +95,11 @@ program
   });
 
 async function renderAppLoop(
-  settings: Awaited<ReturnType<typeof loadSettings>>,
+  initialSettings: Awaited<ReturnType<typeof loadSettings>>,
   modelOverride?: string,
   oneShot?: string,
 ): Promise<void> {
+  let settings = initialSettings;
   while (true) {
     let oauthRequested = false;
     const instance = render(
@@ -91,13 +121,21 @@ async function renderAppLoop(
     }
     if (!oauthRequested) return;
 
-    const r = await runSetupTokenCapture();
-    if (!r.ok) {
-      process.stderr.write(`\nforge: ${r.reason}\n`);
+    const latest = await loadSettings();
+    if (latest.activeProvider === 'chatgpt') {
+      const code = runCodexLogin();
+      if (code !== 0) process.stderr.write(`\nforge: codex login failed (${code})\n`);
+      else process.stdout.write('\nforge: codex session ready\n\n');
     } else {
-      process.stdout.write(`\nforge: token saved (${r.tokenPreview})\n\n`);
+      const r = await runSetupTokenCapture();
+      if (!r.ok) {
+        process.stderr.write(`\nforge: ${r.reason}\n`);
+      } else {
+        process.stdout.write(`\nforge: token saved (${r.tokenPreview})\n\n`);
+      }
     }
-    // Loop back to re-render App; detectAuth will pick up the new token.
+    settings = await loadSettings();
+    // Loop back to re-render App; detectAuth will pick up the new token/session.
   }
 }
 

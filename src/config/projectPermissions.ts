@@ -107,7 +107,7 @@ export function matchPatternFor(tool: string, input: Record<string, unknown>): s
     const url = String(input['url'] ?? '').trim();
     if (!url) return undefined;
     // Match same origin: scheme + host.
-    const origin = url.match(/^https?:\/\/[^\/]+/)?.[0];
+    const origin = url.match(/^https?:\/\/[^/]+/)?.[0];
     if (!origin) return undefined;
     return `^${escapeForRegex(origin)}`;
   }

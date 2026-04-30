@@ -8,16 +8,15 @@
 // move it into the corresponding hook under ./chat/.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Static, Text, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 
-import { SimpleTextInput } from './SimpleTextInput.js';
-import { Banner } from './Banner.js';
-import { Tips } from './Tips.js';
-import { MessageRow } from './MessageRow.js';
-import { ThinkingLine } from './ThinkingLine.js';
+import { Composer } from './Composer.js';
+import { Conversation } from './Conversation.js';
+import { LiveStatus } from './LiveStatus.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ModelSelector } from './ModelSelector.js';
 import { EffortSelector } from './EffortSelector.js';
+import { ThinkingSelector } from './ThinkingSelector.js';
 import { ResumeSelector } from './ResumeSelector.js';
 import { ProviderSelector } from './ProviderSelector.js';
 import { StatusBar } from './StatusBar.js';
@@ -26,9 +25,6 @@ import { PermissionPrompt, type PermissionChoice } from './PermissionPrompt.js';
 import { AskQuestionPrompt } from './AskQuestionPrompt.js';
 import type { ChatMessage } from './MessageList.js';
 
-import { ActiveToolsPanel } from './chat/ActiveToolsPanel.js';
-import { SubagentPanel } from './chat/SubagentPanel.js';
-import { StreamingPreview } from './chat/StreamingPreview.js';
 import { AttachmentsPanel } from './chat/AttachmentsPanel.js';
 import { useStreamState } from './chat/useStreamState.js';
 import { useActiveTools } from './chat/useActiveTools.js';
@@ -36,16 +32,18 @@ import { useSessionStats } from './chat/useSessionStats.js';
 import { useChatClient } from './chat/useChatClient.js';
 import { useChatCommands } from './chat/useChatCommands.js';
 import { makeSubmit } from './chat/useChatSubmit.js';
+import { pickerAfterModelSelect } from './chat/modelPickerFlow.js';
 import type { PickerMode, StaticItem } from './chat/types.js';
 import type { CommandCtx } from './chat/commands/ctx.js';
 
 import { TodoStore, type Todo } from '../agent/todos.js';
 import { filterCommands, expand } from '../commands/registry.js';
-import { resolveModel } from '../agent/models.js';
+import { resolveModel, labelFor } from '../agent/models.js';
 import { DEFAULT_EFFORT, type Effort } from '../agent/effort.js';
+import { DEFAULT_THINKING, type Thinking } from '../agent/thinking.js';
 import type { AuthStatus } from '../auth/status.js';
 import type { Settings, PermissionMode } from '../config/settings.js';
-import { DEFAULT_PERMISSION_MODE, nextPermissionMode, saveSettings } from '../config/settings.js';
+import { DEFAULT_PERMISSION_MODE, saveSettings } from '../config/settings.js';
 import {
   appendProjectAllow,
   loadProjectPermissions,
@@ -84,6 +82,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   const [cursor, setCursor] = useState(0);
   const [activeModel, setActiveModel] = useState(resolveModel(model));
   const [activeEffort, setActiveEffort] = useState<Effort>(effort ?? DEFAULT_EFFORT);
+  const [activeThinking, setActiveThinking] = useState<Thinking>(settings?.thinking ?? DEFAULT_THINKING);
   const [picker, setPicker] = useState<PickerMode>('none');
   const [verbose, setVerbose] = useState(false);
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -186,11 +185,13 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     todoStore,
     getActiveModel: () => activeModel,
     getActiveEffort: () => activeEffort,
+    getThinking: () => activeThinking,
     getActiveProvider: () => activeProvider,
     getPermissionMode: () => permissionMode,
     getTokens: () => stats.tokens,
     setActiveModel,
     setActiveEffort,
+    setActiveThinking,
     setActiveProvider,
     setPermissionMode: setPermissionModeState,
     setTokens: stats.setTokens,
@@ -226,6 +227,7 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     appendHistory,
     getModel: () => activeModel,
     getEffort: () => activeEffort,
+    getThinking: () => activeThinking,
     getProvider: () => activeProvider,
     getProviderConfig: () => settings?.providers?.[activeProvider] ?? {},
   };
@@ -279,12 +281,23 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   }, []);
 
   useEffect(() => {
-    // Force Static to re-emit its scrollback buffer after a terminal resize.
+    // On terminal resize, the previously-emitted Static scrollback was wrapped
+    // by Ink at the old column count. After a shrink, the terminal hard-wraps
+    // those frozen lines at the new (smaller) column count and splits words
+    // mid-character. Clear screen + scrollback before bumping renderEpoch so
+    // Static re-emits the entire transcript fresh at the new width. Debounced
+    // so a window-drag doesn't repaint per pixel.
+    let timer: NodeJS.Timeout | undefined;
     const onResize = () => {
-      setRenderEpoch((n) => n + 1);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        process.stdout.write('\x1Bc\x1B[3J');
+        setRenderEpoch((n) => n + 1);
+      }, 80);
     };
     process.stdout.on('resize', onResize);
     return () => {
+      if (timer) clearTimeout(timer);
       process.stdout.off('resize', onResize);
     };
   }, []);
@@ -322,7 +335,6 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         exit();
       })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const palette = useMemo(() => filterCommands(input), [input]);
@@ -390,7 +402,6 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
       process.stdin.off('data', onData);
       if (pasteTimer) clearTimeout(pasteTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useInput((ch, key) => {
@@ -401,9 +412,10 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     if (picker !== 'none') return;
     // Shift+Tab cycles permission mode regardless of busy state, so users
     // can flip into Plan or YOLO mid-turn (next tool call picks it up).
+    // Silent: don't append a system message; the prompt frame color and
+    // status-bar mode chip already convey the change.
     if (key.shift && key.tab) {
-      const msg = commands.cyclePermissionMode();
-      appendHistory({ role: 'system', text: msg });
+      commands.cyclePermissionMode();
       return;
     }
     // Ctrl+V: many terminals (Windows Terminal, iTerm2 with default config)
@@ -525,7 +537,6 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
     // stable for the life of the chat session, so re-wiring on every
     // render would only re-resolve in-flight asks as cancelled. Depend on
     // the client (also stable) so the effect runs once at mount/unmount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatClient.client]);
 
   // Wire the permission requester once so the client sees state updates
@@ -568,7 +579,6 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
   }
   useEffect(() => {
     void refreshProjectPermissions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keep the client's permissionMode in sync with React state so the
@@ -588,6 +598,18 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
           ? t.modeAutoAccept
           : t.accent;
   const promptColor = busy ? t.muted : modeBorderColor;
+  const modeLabelText =
+    permissionMode === 'plan'
+      ? 'plan'
+      : permissionMode === 'yolo'
+        ? 'YOLO'
+        : permissionMode === 'autoAccept'
+          ? 'auto'
+          : '';
+  // Static is strictly append-only: removing items in the middle (e.g.
+  // dropping `tips` once history is non-empty) makes Ink miss the next
+  // appended item because positional comparison breaks. Keep banner+tips
+  // pinned and only ever append message rows after them.
   const staticItems: StaticItem[] = [
     { kind: 'banner', id: 'banner' },
     { kind: 'tips', id: 'tips' },
@@ -596,20 +618,24 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
 
   return (
     <Box flexDirection="column">
-      <Static key={`static-${renderEpoch}`} items={staticItems}>
-        {(item) => {
-          if (item.kind === 'banner') return <Banner key={item.id} cwd={cwd} />;
-          if (item.kind === 'tips') return <Tips key={item.id} />;
-          return <MessageRow key={item.id} message={item.message} verbose={verbose} />;
-        }}
-      </Static>
+      <Conversation
+        items={staticItems}
+        cwd={cwd}
+        modelLabel={labelFor(activeModel)}
+        modeLabel={modeLabelText || undefined}
+        modeColor={modeLabelText ? modeBorderColor : undefined}
+        verbose={verbose}
+        epoch={renderEpoch}
+      />
 
       {picker === 'model' && (
         <ModelSelector
           current={activeModel}
           providerKeys={providerKeys}
           activeProvider={activeProvider}
-          onSelect={(id) => void commands.applyModel(id)}
+          onSelect={(id) => {
+            void commands.applyModel(id, pickerAfterModelSelect(id));
+          }}
           onCancel={() => setPicker('none')}
         />
       )}
@@ -617,6 +643,23 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
         <EffortSelector
           current={activeEffort}
           onSelect={(e) => void commands.applyEffort(e)}
+          onCancel={() => setPicker('none')}
+        />
+      )}
+      {picker === 'thinking' && (
+        <ThinkingSelector
+          current={activeThinking}
+          onSelect={async (value) => {
+            chatClient.client.setThinking(value);
+            setActiveThinking(value);
+            setPicker('none');
+            appendHistory({ role: 'system', text: `thinking -> ${value}` });
+            try {
+              await saveSettings({ thinking: value });
+            } catch {
+              /* best-effort */
+            }
+          }}
           onCancel={() => setPicker('none')}
         />
       )}
@@ -705,36 +748,25 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
       {!pendingPermission && !pendingAsk && picker === 'none' && (
         <Box flexDirection="column">
           <TodoList todos={todos} />
-          {tools.activeTools.length > 0 && (
-            <ActiveToolsPanel tools={tools.activeTools} cwd={cwd} verbose={verbose} />
-          )}
-          {busy && stream.subPreviews.length > 0 && (
-            <SubagentPanel subs={stream.subPreviews} verbose={verbose} />
-          )}
-          {busy && (
-            <ThinkingLine text={stream.thinking} verbose={verbose} startedAt={busyStartedAt} />
-          )}
-          {busy && stream.streamingText && (
-            <StreamingPreview text={stream.streamingText} verbose={verbose} />
-          )}
+          <LiveStatus
+            busy={busy}
+            busyStartedAt={busyStartedAt}
+            thinking={stream.thinking}
+            streamingText={stream.streamingText}
+            activeTools={tools.activeTools}
+            subs={stream.subPreviews}
+            cwd={cwd}
+            verbose={verbose}
+          />
           <AttachmentsPanel client={chatClient.client} tick={attachmentTick} />
           {queue.length > 0 && (
             <Box flexDirection="column" marginTop={1}>
               <Box>
-                <Text color={t.info} bold>{'» '}</Text>
+                <Text color={t.info} bold>{G.arrow} </Text>
                 <Text color={t.info} bold>queued ({queue.length})</Text>
-                <Text color={t.muted}>  sends when agent idles</Text>
+                <Text color={t.muted}>  {G.bullet}  sends when idle</Text>
               </Box>
-              <Box
-                flexDirection="column"
-                borderStyle="single"
-                borderLeft
-                borderTop={false}
-                borderRight={false}
-                borderBottom={false}
-                borderColor={t.info}
-                paddingLeft={1}
-              >
+              <Box flexDirection="column" paddingLeft={2}>
                 {queue.map((q, i) => (
                   <Box key={i}>
                     <Text color={t.info}>{i + 1}. </Text>
@@ -744,48 +776,36 @@ export function ChatScreen({ model, effort, auth, cwd, oneShot, settings, onExit
               </Box>
             </Box>
           )}
-          <Box borderStyle="round" borderColor={promptColor} paddingX={1}>
-            <Text color={promptColor} bold>{busy ? G.ellipsis : G.prompt} </Text>
-            <SimpleTextInput
-              value={input}
-              onChange={setInput}
-              onSubmit={submit}
-              onHistoryUp={() => {
-                if (paletteOpen) return null;
-                return inputHistoryRef.current.up();
-              }}
-              onHistoryDown={() => {
-                if (paletteOpen) return null;
-                return inputHistoryRef.current.down();
-              }}
-              placeholder={busy ? 'queue a follow-up — sends when ready' : 'what should forge build, fix, or explain?'}
-            />
-          </Box>
+          <Composer
+            input={input}
+            onChange={setInput}
+            onSubmit={submit}
+            onHistoryUp={() => {
+              if (paletteOpen) return null;
+              return inputHistoryRef.current.up();
+            }}
+            onHistoryDown={() => {
+              if (paletteOpen) return null;
+              return inputHistoryRef.current.down();
+            }}
+            busy={busy}
+            permissionMode={permissionMode}
+            borderColor={promptColor}
+            queueLength={queue.length}
+            hasAttachments={chatClient.client.getAttachments().length > 0}
+          />
           {paletteOpen && <CommandPalette commands={palette} cursor={cursor} />}
-          <Box paddingX={1} flexDirection="column">
-            <StatusBar
-              model={activeModel}
-              effort={activeEffort}
-              auth={auth}
-              cwd={cwd}
-              provider={activeProvider}
-              permissionMode={permissionMode}
-              tokens={stats.tokens}
-              template={settings?.statusLine}
-            />
-            <Box flexWrap="wrap">
-              <Text color={t.accentDim} bold>enter</Text>
-              <Text color={t.muted}> send {G.bullet} </Text>
-              <Text color={t.accentDim} bold>/</Text>
-              <Text color={t.muted}> cmds {G.bullet} </Text>
-              <Text color={t.accentDim} bold>ctrl+o</Text>
-              <Text color={t.muted}> details{verbose ? '*' : ''} {G.bullet} </Text>
-              <Text color={t.accentDim} bold>esc</Text>
-              <Text color={t.muted}> cancel {G.bullet} </Text>
-              <Text color={t.accentDim} bold>ctrl+c</Text>
-              <Text color={t.muted}> exit</Text>
-            </Box>
-          </Box>
+          <StatusBar
+            model={activeModel}
+            effort={activeEffort}
+            thinking={activeThinking}
+            auth={auth}
+            cwd={cwd}
+            provider={activeProvider}
+            permissionMode={permissionMode}
+            tokens={stats.tokens}
+            template={settings?.statusLine}
+          />
         </Box>
       )}
     </Box>

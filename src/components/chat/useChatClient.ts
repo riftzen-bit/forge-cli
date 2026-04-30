@@ -15,6 +15,7 @@ import { FileCoordinator } from '../../agent/fileLocks.js';
 import { createSpawnServer } from '../../agent/spawnServer.js';
 import type { AskRequester } from '../../agent/askUser.js';
 import { DEFAULT_EFFORT, type Effort } from '../../agent/effort.js';
+import { DEFAULT_THINKING, type Thinking } from '../../agent/thinking.js';
 import { DEFAULT_PROVIDER } from '../../agent/providers.js';
 import type { ProviderConfig, Settings } from '../../config/settings.js';
 import type { ChatMessage } from '../MessageList.js';
@@ -26,6 +27,7 @@ export type SpawnHandlers = {
   appendHistory: (m: ChatMessage) => void;
   getModel: () => string;
   getEffort: () => Effort;
+  getThinking: () => Thinking;
   getProvider: () => string;
   getProviderConfig: () => ProviderConfig;
 };
@@ -62,6 +64,7 @@ export function useChatClient(deps: Deps): ChatClientApi {
     appendHistory: () => {},
     getModel: () => model,
     getEffort: () => effort ?? DEFAULT_EFFORT,
+    getThinking: () => settings?.thinking ?? DEFAULT_THINKING,
     getProvider: () => settings?.activeProvider ?? DEFAULT_PROVIDER,
     getProviderConfig: () => ({}),
   });
@@ -71,6 +74,7 @@ export function useChatClient(deps: Deps): ChatClientApi {
       coordinator,
       getModel: () => spawnHandlersRef.current.getModel(),
       getEffort: () => spawnHandlersRef.current.getEffort(),
+      getThinking: () => spawnHandlersRef.current.getThinking(),
       getProvider: () => spawnHandlersRef.current.getProvider(),
       getProviderConfig: () => spawnHandlersRef.current.getProviderConfig(),
       onEvent: (tag, ev) => {
@@ -115,6 +119,7 @@ export function useChatClient(deps: Deps): ChatClientApi {
     return new AgentClient({
       model,
       effort: effort ?? DEFAULT_EFFORT,
+      thinking: settings?.thinking,
       locks: coordinator,
       permissionMode: settings?.permissionMode ?? 'default',
       permissionRules: settings?.permissionRules,

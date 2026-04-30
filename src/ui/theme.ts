@@ -24,6 +24,26 @@ export type Theme = {
   modeAutoAccept: string;
 };
 
+// Layout/chrome tokens. Kept separate from the color theme because they
+// don't change between dark/light variants — they're a single source of
+// truth for spacing + radius across all panels so we don't sprinkle magic
+// numbers in every component.
+export const Spacing = {
+  xs: 0,
+  sm: 1,
+  md: 2,
+  lg: 3,
+} as const;
+
+export type Radius = 'round' | 'single' | 'classic' | 'bold' | 'double';
+
+export const Chrome = {
+  radius: 'round' as Radius,
+  paddingX: Spacing.sm,
+  paddingY: Spacing.xs,
+  panelGap: Spacing.sm,
+} as const;
+
 const darkTheme: Theme = {
   accent:       '#5fd7af',
   accentDim:    '#3fa37a',

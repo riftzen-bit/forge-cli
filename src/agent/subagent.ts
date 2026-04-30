@@ -1,11 +1,13 @@
 import { AgentClient, type StreamCallbacks } from './client.js';
 import type { Effort } from './effort.js';
+import type { Thinking } from './thinking.js';
 import type { FileCoordinator } from './fileLocks.js';
 import type { ProviderConfig } from '../config/settings.js';
 
 export type SubagentConfig = {
   model: string;
   effort: Effort;
+  thinking?: Thinking;
   locks?: FileCoordinator;
   agentTag?: string;
   provider?: string;
@@ -20,6 +22,7 @@ export async function runSubagent(
   const opts: ConstructorParameters<typeof AgentClient>[0] = {
     model: config.model,
     effort: config.effort,
+    thinking: config.thinking,
     agentTag: config.agentTag ?? 'sub',
   };
   if (config.locks) opts.locks = config.locks;

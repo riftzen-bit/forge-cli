@@ -52,6 +52,16 @@ export function displayName(tool: string): string {
   return DISPLAY_NAME[base] ?? base;
 }
 
+export function formatToolSummary(
+  tool: string,
+  input: Record<string, unknown>,
+  cwd: string,
+  meta: ToolMeta = {},
+): string {
+  const args = prettyArgs(tool, input, cwd, meta);
+  return args ? `${displayName(tool)} ${args}` : displayName(tool);
+}
+
 // Strip XML-ish error wrappers the Agent SDK emits around tool failures
 // (e.g. `<tool_use_error>...</tool_use_error>`) so the user sees a plain
 // human-readable line instead of raw markup. Also collapses interior tags

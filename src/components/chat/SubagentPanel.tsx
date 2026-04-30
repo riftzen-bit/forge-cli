@@ -32,7 +32,7 @@ export function SubagentPanel({ subs, verbose }: Props) {
 
   if (collapse) {
     return (
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column">
         {subs.map((s, i) => {
           const source = s.text ? 'reply' : 'thinking';
           const stream = (s.text || s.thinking).replace(/\s+/g, ' ').trim();
@@ -40,9 +40,8 @@ export function SubagentPanel({ subs, verbose }: Props) {
           return (
             <Box key={s.tag}>
               <Text color={t.warn}>{i === 0 ? spin : G.toolRun}</Text>
-              <Text color={t.accentDim} bold> {s.tag}</Text>
-              <Text color={t.muted}>  {G.bullet}  {source}  {G.bullet}  {elapsed}s  {G.bullet}  {stream.length} chars</Text>
-              {!verbose && <Text color={t.muted}>  {G.bullet}  ctrl+o expand</Text>}
+              <Text color={t.accentDim}> {s.tag}</Text>
+              <Text color={t.muted}> {G.bullet} {source} {G.bullet} {elapsed}s {G.bullet} {stream.length} chars</Text>
             </Box>
           );
         })}
@@ -51,7 +50,7 @@ export function SubagentPanel({ subs, verbose }: Props) {
   }
 
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column">
       {subs.map((s, i) => {
         const source = s.text ? 'reply' : 'thinking';
         const stream = (s.text || s.thinking).replace(/\s+/g, ' ').trim();
@@ -63,8 +62,8 @@ export function SubagentPanel({ subs, verbose }: Props) {
           <Box key={s.tag} flexDirection="column">
             <Box>
               <Text color={t.warn}>{i === 0 ? spin : G.toolRun}</Text>
-              <Text color={t.accentDim} bold> {s.tag}</Text>
-              <Text color={t.muted}>  {G.bullet}  {source}  {G.bullet}  {elapsed}s  {G.bullet}  {stream.length} chars</Text>
+              <Text color={t.accentDim}> {s.tag}</Text>
+              <Text color={t.muted}> {G.bullet} {source} {G.bullet} {elapsed}s {G.bullet} {stream.length} chars</Text>
             </Box>
             {visible.map((ln, j) => (
               <Box key={j} paddingLeft={2}>
@@ -73,7 +72,7 @@ export function SubagentPanel({ subs, verbose }: Props) {
             ))}
             {hidden > 0 && (
               <Box paddingLeft={2}>
-                <Text color={t.muted}>{G.ellipsis} +{hidden} line{hidden === 1 ? '' : 's'} (ctrl+o expand)</Text>
+                <Text color={t.muted}>{G.ellipsis} +{hidden} line{hidden === 1 ? '' : 's'}</Text>
               </Box>
             )}
           </Box>
